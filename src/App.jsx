@@ -209,8 +209,8 @@ function UploadView({ onAnalyze, globalError }) {
         <div className="mb-3 inline-block rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-xs font-black text-cyan-200">
           Director Creativo IA
         </div>
-        <h2 className="text-4xl font-black leading-tight tracking-tight md:text-5xl">
-          ¿Tu arte está listo<br className="hidden md:block" /> para vender?
+        <h2 className="text-3xl font-black leading-tight tracking-tight sm:text-4xl md:text-5xl">
+          ¿Tu arte está listo<br className="hidden sm:block" /> para vender?
         </h2>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/50">
           Sube tu diseño, completa los datos y recibe un análisis honesto con un prompt profesional para regenerarlo mejorado.
@@ -257,8 +257,10 @@ function UploadView({ onAnalyze, globalError }) {
                   +
                 </div>
                 <div>
-                  <p className="text-2xl font-black">Arrastra tu diseño aquí</p>
-                  <p className="mt-2 text-sm text-white/40">o haz clic para seleccionar</p>
+                  <p className="text-xl font-black sm:text-2xl">Sube tu diseño</p>
+                  <p className="mt-2 text-sm text-white/40">
+                    <span className="hidden sm:inline">Arrastra o </span>toca para seleccionar
+                  </p>
                 </div>
               </div>
             )}
@@ -402,7 +404,7 @@ function AnalyzingView({ preview }) {
         <div className="mb-4 inline-block rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-xs font-black text-cyan-200">
           Color Panda Media Lab está analizando tu arte
         </div>
-        <h2 className="text-4xl font-black">Director creativo trabajando</h2>
+        <h2 className="text-2xl font-black sm:text-4xl">Director creativo trabajando</h2>
         <p className="mt-3 h-6 text-sm text-white/50">{steps[tick]}</p>
       </div>
     </div>
@@ -541,14 +543,14 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   return (
     <div className="space-y-5">
       {/* ── Header ── */}
-      <section className="flex flex-col gap-4 rounded-[32px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+      <section className="flex flex-col gap-3 rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${veredictoClass(veredicto)}`}>
             {veredicto}
           </span>
-          <h2 className="mt-2 text-3xl font-black">Análisis completado</h2>
+          <h2 className="mt-2 text-2xl font-black sm:text-3xl">Análisis completado</h2>
         </div>
-        <Btn variant="ghost" onClick={onReset}>← Nuevo análisis</Btn>
+        <Btn variant="ghost" onClick={onReset} small>← Nuevo análisis</Btn>
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[300px_1fr]">
@@ -631,25 +633,25 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
 
       {/* ══ GENERADOR DE IMAGEN ══════════════════════════════════════════════════ */}
       <section className="rounded-[32px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-6 backdrop-blur-xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 flex flex-col gap-4">
           <div>
             <div className="mb-1 inline-block rounded-full border border-purple-300/30 bg-purple-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-purple-200">
               Edición de imagen IA — gpt-image-1
             </div>
-            <h3 className="text-2xl font-black">Rehaz tu arte desde aquí</h3>
+            <h3 className="text-xl font-black sm:text-2xl">Rehaz tu arte desde aquí</h3>
             <p className="mt-1 text-sm text-white/45">
               Toma tu imagen original y aplica todas las correcciones detectadas. Logo y elementos se conservan.
             </p>
           </div>
           {!generating && !generatedImage && (
-            <Btn onClick={handleGenerate}>
+            <Btn onClick={handleGenerate} full>
               🎨 Generar imagen mejorada
             </Btn>
           )}
           {!generating && generatedImage && (
             <div className="flex gap-3">
-              <Btn onClick={handleGenerate} variant="ghost">🔄 Regenerar</Btn>
-              <Btn onClick={handleDownload}>⬇️ Descargar</Btn>
+              <Btn onClick={handleDownload} full>⬇️ Descargar</Btn>
+              <Btn onClick={handleGenerate} variant="ghost" full>🔄 Regenerar</Btn>
             </div>
           )}
         </div>
@@ -735,11 +737,11 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             </div>
 
             {/* Botones de descarga */}
-            <div className="flex flex-wrap justify-center gap-3">
-              <Btn onClick={handleDownload}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+              <Btn onClick={handleDownload} full>
                 ⬇️ Descargar imagen mejorada
               </Btn>
-              <Btn variant="ghost" onClick={handleGenerate}>
+              <Btn variant="ghost" onClick={handleGenerate} full>
                 🔄 Regenerar versión
               </Btn>
             </div>
@@ -810,15 +812,45 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070812] p-4 text-white md:p-6">
+    <div className="min-h-screen bg-[#070812] text-white">
       {/* Ambient blobs */}
       <div className="pointer-events-none fixed left-[-120px] top-[-120px] h-80 w-80 rounded-full bg-pink-600/20 blur-3xl" />
       <div className="pointer-events-none fixed right-[-100px] top-40 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl" />
       <div className="pointer-events-none fixed bottom-[-150px] left-1/3 h-96 w-96 rounded-full bg-purple-600/20 blur-3xl" />
 
-      <div className="relative mx-auto grid max-w-7xl gap-5 lg:grid-cols-[260px_1fr]">
-        {/* ── Sidebar ── */}
-        <aside className="self-start rounded-[32px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur-xl lg:sticky lg:top-6">
+      {/* ── Mobile top bar (visible only on < lg) ── */}
+      <header className="sticky top-0 z-50 flex items-center gap-3 border-b border-white/10 bg-[#070812]/90 px-4 py-3 backdrop-blur-xl lg:hidden">
+        <img src="/logo.png" alt="Color Panda Media Lab"
+          className="h-9 w-9 flex-shrink-0 rounded-xl bg-white object-contain p-0.5 shadow" />
+        <div className="min-w-0">
+          <p className="text-sm font-black leading-none">Panda Proof</p>
+          <p className="text-[10px] text-white/40">Director Creativo IA</p>
+        </div>
+        {analysis && view !== "analyzing" && (
+          <div className="ml-auto flex flex-shrink-0 gap-1.5">
+            <button
+              onClick={() => setView("results")}
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                view === "results" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"
+              }`}
+            >
+              Resultado
+            </button>
+            <button
+              onClick={handleReset}
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                view === "upload" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"
+              }`}
+            >
+              Nuevo
+            </button>
+          </div>
+        )}
+      </header>
+
+      <div className="relative mx-auto grid max-w-7xl gap-5 p-4 md:p-6 lg:grid-cols-[260px_1fr]">
+        {/* ── Sidebar — desktop only ── */}
+        <aside className="hidden self-start rounded-[32px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur-xl lg:block lg:sticky lg:top-6">
           {/* Logo — always visible */}
           <div className="flex flex-col items-center gap-2 pb-2">
             <img
