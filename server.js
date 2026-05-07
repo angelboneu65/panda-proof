@@ -8,8 +8,6 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
-const isProd = process.env.NODE_ENV === "production";
-
 // ── Load .env ─────────────────────────────────────────────────────────────────
 const __dir = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dir, ".env");
@@ -36,12 +34,6 @@ const getOpenAI = () => {
     throw new Error("OPENAI_API_KEY no configurada en .env");
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
-
-// In production serve the built React app; in dev use Vite's proxy
-if (isProd) {
-  const distPath = resolve(__dir, "dist");
-  app.use(express.static(distPath));
-}
 
 app.use(cors({
   origin: (origin, cb) => cb(null, true),   // permite cualquier origen (Netlify, localhost, etc.)
@@ -278,13 +270,6 @@ Reply with ONLY the condensed prompt.`,
     res.status(500).json({ error: err.message });
   }
 });
-
-// SPA fallback — must be after all API routes
-if (isProd) {
-  app.get("*", (_req, res) =>
-    res.sendFile(resolve(__dir, "dist", "index.html"))
-  );
-}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
