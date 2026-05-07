@@ -453,11 +453,16 @@ app.post("/api/generate", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
 
-    const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras } = req.body;
+    const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions } = req.body;
 
     const sourcePrompt = (nicho && producto)
       ? buildGenerationPrompt({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras })
       : PANDA_PROOF_BASE_PROMPT;
+
+    // Append user's custom instructions (highest priority)
+    const finalPrompt = customInstructions
+      ? `${sourcePrompt}\n\nINSTRUCCIONES ADICIONALES DEL USUARIO (PRIORIDAD MÁXIMA — aplica estas correcciones específicas):\n${customInstructions}`
+      : sourcePrompt;
 
     // Paso 1: Sonnet condensa el prompt para gpt-image-1
     const reformatMsg = await client.messages.create({
@@ -476,11 +481,12 @@ ABSOLUTE RULES — never break these:
 - Do NOT alter or reinterpret the logo or brand identity
 - Do NOT change the core concept of the ad
 - Do NOT invent prices or benefits not present in the original
+- If user added "INSTRUCCIONES ADICIONALES DEL USUARIO" they have HIGHEST priority — apply them precisely
 
 Write in English only. Start with: "Optimize this advertising image to improve conversion while preserving its core concept, main person/model, logo, and brand identity. Keep the exact same dimensions, format and aspect ratio:"
 
 Brief:
-${sourcePrompt}
+${finalPrompt}
 
 Reply with ONLY the condensed prompt (no explanation).`,
       }],

@@ -1,4 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import {
+  supabase, supabaseEnabled, getSession, signOut,
+  saveAnalysis, listAnalyses, deleteAnalysis, rowToAnalysis,
+} from "./supabase";
+import AuthView from "./AuthView";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -524,6 +529,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const [genAnalyzing,   setGenAnalyzing]   = useState(false);
   const [genScore,       setGenScore]       = useState(null);
   const [genShortLabel,  setGenShortLabel]  = useState(null);
+  const [customPrompt,   setCustomPrompt]   = useState("");
 
   const genSteps = [
     "Preservando concepto e identidad del arte…",
@@ -606,6 +612,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       if (formData) Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
       if (mainProblemsDetected.length)   fd.append("problemas", mainProblemsDetected.join("; "));
       if (regenerationPriorities.length) fd.append("mejoras",   regenerationPriorities.join("; "));
+      if (customPrompt.trim())            fd.append("customInstructions", customPrompt.trim());
 
       const res  = await fetch(`${API_BASE}/api/generate`, { method: "POST", body: fd });
       const data = await res.json();
@@ -789,6 +796,33 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
               Aplica todas las correcciones detectadas conservando el concepto, logo y persona principal.
             </p>
           </div>
+
+          {/* Custom prompt textarea */}
+          {!generating && (
+            <div>
+              <div className="mb-1.5 flex items-center gap-2">
+                <label className="text-xs font-black text-white/70">
+                  {generatedImage ? "Comando para regenerar" : "Instrucciones adicionales"}
+                </label>
+                <span className="text-[10px] font-bold text-white/30">opcional</span>
+              </div>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder={generatedImage
+                  ? "Ej: Hazlo más vibrante, agranda el CTA, cambia el fondo a azul, vuelve a poner el logo abajo a la derecha…"
+                  : "Ej: Mantén el diseño en horizontal, no cambies la modelo, agrega una etiqueta con el descuento…"}
+                rows={3}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-cyan-400/60 resize-none"
+              />
+              <p className="mt-1 text-[10px] text-white/30">
+                {generatedImage
+                  ? "Dile a la IA qué corregir si la versión anterior no quedó bien."
+                  : "Indica detalles específicos que quieras conservar o modificar."}
+              </p>
+            </div>
+          )}
+
           {!generating && !generatedImage && (
             <Btn onClick={handleGenerate} full>🎨 Generar arte optimizado</Btn>
           )}
@@ -882,15 +916,141 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// HISTORY VIEW
+// ══════════════════════════════════════════════════════════════════════════════
+function HistoryCard({ row, onLoad, onDelete }) {
+  const a = rowToAnalysis(row);
+  const meta = accionMeta(a.accionRecomendada);
+  const date = new Date(a.createdAt).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
+
+  return (
+    <div className="group relative rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20 hover:bg-white/[0.05]">
+      <button
+        onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este análisis?")) onDelete(a.id); }}
+        className="absolute right-3 top-3 rounded-lg bg-black/40 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+      >✕</button>
+
+      <div onClick={() => onLoad(row)} className="cursor-pointer">
+        <div className="flex items-start gap-3">
+          <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${scoreGradient(a.pandaScore)} font-black text-white shadow-lg`}>
+            {a.pandaScore}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-white/85">{a.contextUsed.businessType || "Sin contexto"}</p>
+            <p className="truncate text-xs text-white/45">{a.contextUsed.whatIsBeingSold || "—"}</p>
+            <p className="mt-1 text-[10px] text-white/30">{date}</p>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-black ${scoreBadgeClass(a.pandaScore)}`}>
+            {a.shortLabel}
+          </span>
+          {a.profileApplied && (
+            <span className="truncate text-[10px] text-white/30">{a.profileApplied}</span>
+          )}
+        </div>
+        <div className={`mt-2 rounded-lg py-1 text-center text-[10px] font-black text-white ${meta.bg}`}>
+          {meta.icon} {a.accionRecomendada}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryView({ history, onLoad, onDelete, onReset }) {
+  if (history.length === 0) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
+          <p className="mt-1 text-sm text-white/40">Aquí aparecerán todos tus análisis guardados.</p>
+        </div>
+        <div className="rounded-[32px] border border-dashed border-white/10 bg-white/[0.02] p-12 text-center">
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-3xl">📊</div>
+          <p className="text-lg font-black text-white">Aún no has guardado ningún análisis</p>
+          <p className="mt-2 max-w-md mx-auto text-sm text-white/40">Cada Panda Score que generes se guardará automáticamente aquí. Podrás revisarlo después y comparar resultados.</p>
+          <div className="mt-6 inline-block">
+            <Btn onClick={onReset}>🐼 Hacer mi primer análisis</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
+          <p className="mt-1 text-sm text-white/40">{history.length} {history.length === 1 ? "análisis guardado" : "análisis guardados"}</p>
+        </div>
+        <Btn onClick={onReset} small>+ Nuevo</Btn>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {history.map((row) => (
+          <HistoryCard key={row.id} row={row} onLoad={onLoad} onDelete={onDelete} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [view,      setView]      = useState("upload");
+  const [session, setSession]     = useState(null);
+  const [authReady, setAuthReady] = useState(!supabaseEnabled);
+
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    getSession().then((s) => { setSession(s); setAuthReady(true); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      setAuthReady(true);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (!authReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#070812]">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white/60" />
+      </div>
+    );
+  }
+
+  if (supabaseEnabled && !session) {
+    return <AuthView onSuccess={setSession} />;
+  }
+
+  return <MainApp session={session} />;
+}
+
+// ── Main app shell (after auth) ───────────────────────────────────────────────
+function MainApp({ session }) {
+  const [view,      setView]      = useState("upload"); // upload | analyzing | results | history
   const [preview,   setPreview]   = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [analysis,  setAnalysis]  = useState(null);
   const [formData,  setFormData]  = useState(null);
   const [error,     setError]     = useState(null);
+  const [history,   setHistory]   = useState([]);
+
+  const userName = session?.user?.user_metadata?.name
+    || session?.user?.email?.split("@")[0]
+    || "Tú";
+
+  // Load history on mount
+  useEffect(() => {
+    if (!supabaseEnabled || !session) return;
+    listAnalyses().then(setHistory);
+  }, [session?.user?.id]);
+
+  const refreshHistory = useCallback(async () => {
+    if (!supabaseEnabled || !session) return;
+    const rows = await listAnalyses();
+    setHistory(rows);
+  }, [session?.user?.id]);
 
   const handleAnalyze = async (file, form) => {
     setImageFile(file);
@@ -908,10 +1068,46 @@ export default function App() {
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error desconocido");
       setAnalysis(data.analysis);
       setView("results");
+
+      // Save to DB if logged in
+      if (supabaseEnabled && session) {
+        try {
+          await saveAnalysis(data.analysis);
+          refreshHistory();
+        } catch (e) {
+          console.error("No se pudo guardar:", e.message);
+        }
+      }
     } catch (err) {
       setError(err.message);
       setView("upload");
     }
+  };
+
+  const handleLoadHistory = (row) => {
+    const a = rowToAnalysis(row);
+    setAnalysis(a);
+    setPreview(null);
+    setImageFile(null);
+    setFormData(a.contextUsed ? {
+      nicho:      a.contextUsed.businessType    || "",
+      producto:   a.contextUsed.whatIsBeingSold || "",
+      publico:    a.contextUsed.targetAudience  || "",
+      plataforma: a.contextUsed.platform        || "",
+      objetivo:   a.contextUsed.objective       || "",
+      oferta:     a.contextUsed.promotion       || "",
+    } : null);
+    setView("results");
+  };
+
+  const handleDelete = async (id) => {
+    await deleteAnalysis(id);
+    setHistory((h) => h.filter((r) => r.id !== id));
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    // Auth listener in App will redirect to AuthView
   };
 
   const handleReset = () => {
@@ -963,13 +1159,30 @@ export default function App() {
 
           <nav className="mt-8 space-y-2">
             <div
-              onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
-              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "results" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
-            >Dashboard</div>
-            <div
               onClick={handleReset}
-              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${view !== "results" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
-            >Subir diseño</div>
+              className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+            >
+              <span>📤</span> Subir diseño
+            </div>
+            <div
+              onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
+              className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "results" ? "bg-white text-black" : analysis ? "text-white/50 hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+            >
+              <span>📊</span> Resultado actual
+            </div>
+            {supabaseEnabled && session && (
+              <div
+                onClick={() => setView("history")}
+                className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "history" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+              >
+                <span className="flex items-center gap-3"><span>🗂️</span> Mis análisis</span>
+                {history.length > 0 && (
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
+                    {history.length}
+                  </span>
+                )}
+              </div>
+            )}
           </nav>
 
           {analysis ? (
@@ -995,6 +1208,27 @@ export default function App() {
               </p>
             </div>
           )}
+
+          {/* User footer (logged in) */}
+          {supabaseEnabled && session && (
+            <div className="mt-6 border-t border-white/10 pt-4">
+              <div className="mb-3 flex items-center gap-3 px-1">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white">
+                  {userName[0]?.toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-white/70">{userName}</p>
+                  <p className="truncate text-[10px] text-white/30">{session.user?.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/10 hover:text-white/80"
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          )}
         </aside>
 
         {/* ── Main content ── */}
@@ -1012,6 +1246,14 @@ export default function App() {
               preview={preview}
               imageFile={imageFile}
               formData={formData}
+              onReset={handleReset}
+            />
+          )}
+          {view === "history" && (
+            <HistoryView
+              history={history}
+              onLoad={handleLoadHistory}
+              onDelete={handleDelete}
               onReset={handleReset}
             />
           )}
