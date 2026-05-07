@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
-// ── Color helpers ─────────────────────────────────────────────────────────────
+// ── Score gradient ring ───────────────────────────────────────────────────────
 const scoreGradient = (s) =>
   s >= 90 ? "from-emerald-400 to-green-500"
   : s >= 80 ? "from-cyan-400 to-teal-400"
@@ -11,15 +11,21 @@ const scoreGradient = (s) =>
   : s >= 40 ? "from-orange-500 to-red-500"
   : "from-red-500 to-red-700";
 
-const veredictoClass = (v) =>
-  ({
-    "Excelente":        "border-emerald-400/30 bg-emerald-400/15 text-emerald-300",
-    "Muy bueno":        "border-cyan-400/30 bg-cyan-400/15 text-cyan-300",
-    "Bueno":            "border-teal-400/30 bg-teal-400/15 text-teal-300",
-    "En desarrollo":    "border-yellow-400/30 bg-yellow-400/15 text-yellow-300",
-    "Con potencial":    "border-orange-400/30 bg-orange-400/15 text-orange-300",
-    "Punto de partida": "border-purple-400/30 bg-purple-400/15 text-purple-300",
-  }[v] ?? "border-white/15 bg-white/5 text-white/60");
+// Score badge class (based on numeric score)
+const scoreBadgeClass = (score) => {
+  if (score >= 85) return "border-emerald-400/30 bg-emerald-400/15 text-emerald-300";
+  if (score >= 70) return "border-cyan-400/30 bg-cyan-400/15 text-cyan-300";
+  if (score >= 50) return "border-amber-400/30 bg-amber-400/15 text-amber-300";
+  return "border-red-400/30 bg-red-400/15 text-red-300";
+};
+
+// Status colors per category status
+const STATUS_COLORS = {
+  excellent:  { bg: "bg-emerald-400/15", text: "text-emerald-300", border: "border-emerald-400/20", bar: "from-emerald-400 to-green-400" },
+  good:       { bg: "bg-cyan-400/15",    text: "text-cyan-300",    border: "border-cyan-400/20",    bar: "from-cyan-400 to-teal-400" },
+  needs_work: { bg: "bg-amber-400/15",   text: "text-amber-300",   border: "border-amber-400/20",   bar: "from-amber-400 to-yellow-300" },
+  weak:       { bg: "bg-red-400/15",     text: "text-red-300",     border: "border-red-400/20",     bar: "from-red-500 to-orange-400" },
+};
 
 const accionMeta = (a) =>
   ({
@@ -29,7 +35,7 @@ const accionMeta = (a) =>
     "Rediseñarlo completo":     { bg: "bg-red-600",     icon: "🚫" },
   }[a] ?? { bg: "bg-purple-600", icon: "📋" });
 
-// ── Score ring (animates) ─────────────────────────────────────────────────────
+// ── ScoreCircle (animates) ────────────────────────────────────────────────────
 function ScoreCircle({ score }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -53,18 +59,20 @@ function ScoreCircle({ score }) {
   );
 }
 
-function Bar({ value, max }) {
-  const pct = max > 0 ? (value / max) * 100 : 0;
+// ── Bar ───────────────────────────────────────────────────────────────────────
+function Bar({ value, max = 100, colorClass = "from-cyan-300 via-purple-400 to-pink-400" }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
       <div
-        className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-purple-400 to-pink-400 transition-all duration-700"
+        className={`h-full rounded-full bg-gradient-to-r ${colorClass} transition-all duration-700`}
         style={{ width: `${pct}%` }}
       />
     </div>
   );
 }
 
+// ── Form fields ───────────────────────────────────────────────────────────────
 function Field({ label, placeholder, value, onChange, error, required, hint }) {
   return (
     <div>
@@ -80,8 +88,8 @@ function Field({ label, placeholder, value, onChange, error, required, hint }) {
           error ? "border-red-400/60" : "border-white/10"
         }`}
       />
-      {hint && !error && <p className="mt-1 text-[11px] text-white/30">{hint}</p>}
-      {error && <p className="mt-1 text-[11px] text-red-400">{error}</p>}
+      {hint  && !error && <p className="mt-1 text-[11px] text-white/30">{hint}</p>}
+      {error &&           <p className="mt-1 text-[11px] text-red-400">{error}</p>}
     </div>
   );
 }
@@ -108,13 +116,10 @@ function SelectField({ label, value, onChange, error, required, options }) {
 }
 
 function Btn({ children, onClick, variant = "primary", disabled = false, full = false, small = false }) {
-  const base = `rounded-2xl font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
-    full ? "w-full" : ""
-  } ${small ? "px-4 py-2 text-xs" : "px-5 py-3.5 text-sm"}`;
-  const styles =
-    variant === "primary"
-      ? "bg-white text-black hover:bg-white/90 active:scale-[0.98]"
-      : "border border-white/15 bg-white/5 text-white hover:bg-white/10";
+  const base = `rounded-2xl font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${full ? "w-full" : ""} ${small ? "px-4 py-2 text-xs" : "px-5 py-3.5 text-sm"}`;
+  const styles = variant === "primary"
+    ? "bg-white text-black hover:bg-white/90 active:scale-[0.98]"
+    : "border border-white/15 bg-white/5 text-white hover:bg-white/10";
   return (
     <button onClick={onClick} disabled={disabled} className={`${base} ${styles}`}>
       {children}
@@ -122,12 +127,10 @@ function Btn({ children, onClick, variant = "primary", disabled = false, full = 
   );
 }
 
-// ── Rainbow spinner (analysis / generation) ───────────────────────────────────
+// ── Rainbow spinner ───────────────────────────────────────────────────────────
 function RainbowLogo({ progress = null }) {
-  const R = 58;
-  const CIRC = 2 * Math.PI * R;
+  const R = 58, CIRC = 2 * Math.PI * R;
   const offset = progress === null ? 0 : CIRC * (1 - progress / 100);
-
   return (
     <div className="relative flex h-32 w-32 items-center justify-center">
       <svg
@@ -148,11 +151,7 @@ function RainbowLogo({ progress = null }) {
         </defs>
         <circle cx="64" cy="64" r={R} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6" />
         <circle
-          cx="64" cy="64" r={R}
-          fill="none"
-          stroke="url(#rainbow-grad)"
-          strokeWidth="6"
-          strokeLinecap="round"
+          cx="64" cy="64" r={R} fill="none" stroke="url(#rainbow-grad)" strokeWidth="6" strokeLinecap="round"
           strokeDasharray={`${CIRC}`}
           strokeDashoffset={progress === null ? `${CIRC * 0.25}` : `${offset}`}
           style={progress !== null ? { transition: "stroke-dashoffset 0.4s ease-out" } : {}}
@@ -166,16 +165,52 @@ function RainbowLogo({ progress = null }) {
   );
 }
 
+// ── Category card (shows score + explanation + recommendation) ────────────────
+function CategoryCard({ category }) {
+  const cfg = STATUS_COLORS[category.status] || STATUS_COLORS.needs_work;
+  return (
+    <div className={`rounded-2xl border p-4 ${cfg.border} bg-white/[0.02]`}>
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="text-sm font-bold text-white/85">{category.label}</span>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black ${cfg.bg} ${cfg.text}`}>
+              {category.statusLabel}
+            </span>
+            {category.weight > 0 && (
+              <span className="text-[10px] text-white/25">{category.weight}% peso</span>
+            )}
+          </div>
+          <Bar value={category.score} max={100} colorClass={cfg.bar} />
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="text-xl font-black tabular-nums text-white">{category.score}</span>
+          <span className="text-xs text-white/30">/100</span>
+        </div>
+      </div>
+      {/* Explanation + Recommendation */}
+      <div className="mt-3 space-y-2 border-t border-white/8 pt-3">
+        <p className="text-xs leading-relaxed text-white/55">{category.explanation}</p>
+        <div className="flex gap-2">
+          <span className="mt-0.5 shrink-0 text-xs text-cyan-400">→</span>
+          <p className="text-xs leading-relaxed text-cyan-300/75">{category.recommendation}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // UPLOAD VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 function UploadView({ onAnalyze, globalError }) {
-  const [image, setImage]           = useState(null);
-  const [preview, setPreview]       = useState(null);
-  const [dragging, setDragging]     = useState(false);
-  const [loading, setLoading]       = useState(false);
+  const [image,      setImage]      = useState(null);
+  const [preview,    setPreview]    = useState(null);
+  const [dragging,   setDragging]   = useState(false);
+  const [loading,    setLoading]    = useState(false);
   const [extracting, setExtracting] = useState(false);
-  const [errors, setErrors]         = useState({});
+  const [errors,     setErrors]     = useState({});
   const [autoFilled, setAutoFilled] = useState(false);
   const fileRef = useRef(null);
 
@@ -255,8 +290,6 @@ function UploadView({ onAnalyze, globalError }) {
           Sube tu diseño y Panda Proof evaluará su claridad, CTA, legibilidad móvil y
           potencial de conversión. Recibirás un diagnóstico honesto y una versión optimizada.
         </p>
-
-        {/* Value bullets */}
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {[
             { icon: "🎯", label: "Panda Score" },
@@ -273,17 +306,15 @@ function UploadView({ onAnalyze, globalError }) {
         </div>
       </section>
 
-      {/* ── Demo result snippet ── */}
+      {/* ── Demo snippet ── */}
       <section className="rounded-[28px] border border-white/8 bg-white/[0.02] p-4 backdrop-blur-xl">
-        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-white/25">
-          Ejemplo de resultado
-        </p>
+        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-white/25">Ejemplo de resultado</p>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/20 bg-yellow-400/10 px-4 py-2.5">
             <span className="text-2xl font-black text-yellow-300">74</span>
             <div>
               <p className="text-[10px] font-black text-yellow-300/70">Panda Score</p>
-              <p className="text-[10px] text-white/35">Bueno</p>
+              <p className="text-[10px] text-white/35">Bueno, pero puede convertir mejor</p>
             </div>
           </div>
           <div className="flex-1 min-w-[200px]">
@@ -317,9 +348,9 @@ function UploadView({ onAnalyze, globalError }) {
             onDrop={(e) => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
             onClick={() => !preview && fileRef.current?.click()}
             className={`relative flex min-h-[300px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[24px] border-2 transition-all ${
-              errors.image     ? "border-red-400/50 bg-red-400/5"
-              : dragging       ? "border-cyan-400 bg-cyan-400/10"
-              : preview        ? "cursor-default border-white/10 bg-transparent"
+              errors.image ? "border-red-400/50 bg-red-400/5"
+              : dragging   ? "border-cyan-400 bg-cyan-400/10"
+              : preview    ? "cursor-default border-white/10 bg-transparent"
               : "border-dashed border-white/20 bg-black/25 hover:border-white/40"
             }`}
           >
@@ -327,7 +358,11 @@ function UploadView({ onAnalyze, globalError }) {
               <>
                 <img src={preview} alt="Vista previa" className="max-h-[400px] w-full object-contain" />
                 <button
-                  onClick={(e) => { e.stopPropagation(); setImage(null); setPreview(null); setAutoFilled(false); setForm({ nicho: "", producto: "", publico: "", plataforma: "", objetivo: "", oferta: "" }); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImage(null); setPreview(null); setAutoFilled(false);
+                    setForm({ nicho: "", producto: "", publico: "", plataforma: "", objetivo: "", oferta: "" });
+                  }}
                   className="absolute right-3 top-3 rounded-xl bg-black/70 px-3 py-1.5 text-xs font-black text-white/80 hover:bg-black/90"
                 >
                   Cambiar
@@ -344,9 +379,7 @@ function UploadView({ onAnalyze, globalError }) {
                     <span className="hidden sm:inline">Arrastra o </span>toca para seleccionar
                   </p>
                 </div>
-                <p className="text-[11px] text-white/25">
-                  Panda Proof detectará el contexto automáticamente
-                </p>
+                <p className="text-[11px] text-white/25">Panda Proof detectará el contexto automáticamente</p>
               </div>
             )}
           </div>
@@ -357,12 +390,8 @@ function UploadView({ onAnalyze, globalError }) {
 
         {/* RIGHT — context form */}
         <div className="rounded-[32px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
-
-          {/* Form header */}
           <div className="flex items-start justify-between gap-3 mb-1">
-            <div>
-              <h3 className="text-lg font-black">Contexto detectado</h3>
-            </div>
+            <h3 className="text-lg font-black">Contexto detectado</h3>
             {extracting && (
               <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[10px] font-black text-cyan-300">
                 <span className="h-2 w-2 animate-spin rounded-full border-2 border-transparent border-t-cyan-300" />
@@ -376,7 +405,6 @@ function UploadView({ onAnalyze, globalError }) {
             )}
           </div>
 
-          {/* Smart microcopy */}
           <div className="mb-5 rounded-2xl border border-cyan-400/10 bg-cyan-400/5 px-4 py-3">
             <p className="text-[11px] leading-relaxed text-cyan-200/70">
               {!image
@@ -390,35 +418,23 @@ function UploadView({ onAnalyze, globalError }) {
           </div>
 
           <div className="space-y-4">
-            <Field
-              label="Tipo de negocio" placeholder="Ej: Spa, Restaurante, Clínica…"
-              value={form.nicho} onChange={set("nicho")} error={errors.nicho} required
-            />
-            <Field
-              label="¿Qué se está vendiendo?" placeholder="Ej: Masaje relajante 60 min"
-              value={form.producto} onChange={set("producto")} error={errors.producto} required
-            />
-            <Field
-              label="Público objetivo" placeholder="Ej: Mujeres 25–45 años"
-              value={form.publico} onChange={set("publico")} error={errors.publico} required
-            />
-            <SelectField
-              label="Plataforma destino" value={form.plataforma}
+            <Field label="Tipo de negocio" placeholder="Ej: Spa, Restaurante, Clínica…"
+              value={form.nicho} onChange={set("nicho")} error={errors.nicho} required />
+            <Field label="¿Qué se está vendiendo?" placeholder="Ej: Masaje relajante 60 min"
+              value={form.producto} onChange={set("producto")} error={errors.producto} required />
+            <Field label="Público objetivo" placeholder="Ej: Mujeres 25–45 años"
+              value={form.publico} onChange={set("publico")} error={errors.publico} required />
+            <SelectField label="Plataforma destino" value={form.plataforma}
               onChange={set("plataforma")} error={errors.plataforma} required
               options={["Instagram Stories","Instagram Feed","Facebook","TikTok",
-                        "WhatsApp Status","Google Ads","Web / Landing page","Impreso / Flyer"]}
-            />
-            <SelectField
-              label="Objetivo de conversión" value={form.objetivo}
+                        "WhatsApp Status","Google Ads","Web / Landing page","Impreso / Flyer"]} />
+            <SelectField label="Objetivo de conversión" value={form.objetivo}
               onChange={set("objetivo")} error={errors.objetivo} required
               options={["Mensajes / WhatsApp","Ventas directas","Reservas","Llamadas",
-                        "Tráfico web","Reconocimiento de marca","Captación de leads"]}
-            />
-            <Field
-              label="Oferta o precio (opcional)" placeholder="Ej: 50% OFF, desde $29, 2×1"
+                        "Tráfico web","Reconocimiento de marca","Captación de leads"]} />
+            <Field label="Oferta o precio (opcional)" placeholder="Ej: 50% OFF, desde $29, 2×1"
               value={form.oferta} onChange={set("oferta")}
-              hint="Si hay una promoción visible en el arte, detállala aquí"
-            />
+              hint="Si hay una promoción visible en el arte, detállala aquí" />
           </div>
 
           <div className="mt-6 space-y-3">
@@ -435,14 +451,12 @@ function UploadView({ onAnalyze, globalError }) {
                 </span>
               ) : "🐼 Obtener mi Panda Score"}
             </Btn>
-            <p className="text-center text-[11px] text-white/30">
-              El análisis toma entre 15 y 30 segundos
-            </p>
+            <p className="text-center text-[11px] text-white/30">El análisis toma entre 15 y 30 segundos</p>
           </div>
         </div>
       </div>
 
-      {/* ── How it works steps ── */}
+      {/* ── How it works ── */}
       <section className="rounded-[28px] border border-white/8 bg-white/[0.02] p-5 backdrop-blur-xl">
         <p className="mb-4 text-[10px] font-black uppercase tracking-widest text-white/25">Así funciona</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -454,9 +468,7 @@ function UploadView({ onAnalyze, globalError }) {
             { n: "5", label: "Arte mejorado listo" },
           ].map(({ n, label }) => (
             <div key={n} className="flex items-center gap-2">
-              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-black text-white/60">
-                {n}
-              </span>
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-black text-white/60">{n}</span>
               <span className="text-[11px] font-bold text-white/45">{label}</span>
             </div>
           ))}
@@ -502,21 +514,6 @@ function AnalyzingView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // RESULTS VIEW
 // ══════════════════════════════════════════════════════════════════════════════
-
-// All 10 Panda Score criteria — bars scale to their actual max
-const ALL_CRITERIOS = [
-  { label: "Claridad del mensaje",     key: "claridad_mensaje" },
-  { label: "Fuerza de la oferta",      key: "fuerza_oferta" },
-  { label: "Jerarquía visual",         key: "jerarquia_visual" },
-  { label: "CTA / Llamado a la acción",key: "cta" },
-  { label: "Legibilidad móvil",        key: "legibilidad_movil" },
-  { label: "Relevancia con el nicho",  key: "relevancia_nicho" },
-  { label: "Relevancia con el público",key: "relevancia_publico" },
-  { label: "Confianza y credibilidad", key: "confianza_credibilidad" },
-  { label: "Calidad visual premium",   key: "calidad_visual" },
-  { label: "Fricción de conversión",   key: "friccion_conversion" },
-];
-
 function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const [copied,         setCopied]         = useState(false);
   const [generating,     setGenerating]     = useState(false);
@@ -526,7 +523,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const [genProgress,    setGenProgress]    = useState(0);
   const [genAnalyzing,   setGenAnalyzing]   = useState(false);
   const [genScore,       setGenScore]       = useState(null);
-  const [genVeredicto,   setGenVeredicto]   = useState(null);
+  const [genShortLabel,  setGenShortLabel]  = useState(null);
 
   const genSteps = [
     "Preservando concepto e identidad del arte…",
@@ -538,25 +535,29 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   ];
 
   const {
-    score_final,
-    veredicto,
-    resumen,
-    lo_que_funciona   = [],
-    lo_que_mejorar    = [],
-    desglose          = {},
-    pesos_activos     = {},
-    perfil_aplicado,
-    prompt_profesional,
-    accion_recomendada,
+    pandaScore            = 0,
+    shortLabel            = "—",
+    scoreLabel            = "",
+    scoreInterpretation   = "",
+    profileApplied        = "",
+    platformDetected      = "",
+    accionRecomendada     = "",
+    activeWeights         = {},
+    categories            = {},
+    mainProblemsDetected  = [],
+    topRecommendations    = [],
+    regenerationPriorities = [],
+    regenerationPrompt    = "",
   } = analysis;
 
-  const meta = accionMeta(accion_recomendada);
+  const meta = accionMeta(accionRecomendada);
 
-  // Only show criteria with a non-zero max weight
-  const activeCriterios = ALL_CRITERIOS.filter(({ key }) => (pesos_activos[key] ?? 0) > 0);
+  // Sort categories by weight (most important first)
+  const sortedCategories = Object.entries(categories)
+    .sort(([a], [b]) => (activeWeights[b] ?? 0) - (activeWeights[a] ?? 0));
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(prompt_profesional ?? "");
+    navigator.clipboard.writeText(regenerationPrompt);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -573,8 +574,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error");
-      setGenScore(data.analysis.score_final);
-      setGenVeredicto(data.analysis.veredicto);
+      setGenScore(data.analysis.pandaScore);
+      setGenShortLabel(data.analysis.shortLabel);
     } catch (err) {
       console.error("Error analizando imagen generada:", err.message);
     } finally {
@@ -588,14 +589,11 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     setGenError(null);
     setGeneratedImage(null);
     setGenScore(null);
-    setGenVeredicto(null);
+    setGenShortLabel(null);
     setGenProgress(0);
 
     const tickId = setInterval(() => setGenTick((t) => (t + 1) % genSteps.length), 3500);
-
-    const TOTAL_MS = 80000;
-    const INTERVAL = 400;
-    const MAX_AUTO  = 92;
+    const TOTAL_MS = 80000, INTERVAL = 400, MAX_AUTO = 92;
     let elapsed = 0;
     const progressId = setInterval(() => {
       elapsed += INTERVAL;
@@ -605,12 +603,9 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     try {
       const fd = new FormData();
       fd.append("image", imageFile);
-      // Send context so generation uses the dynamic prompt
-      if (formData) {
-        Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
-      }
-      // Send detected problems as context for the generation prompt
-      if (lo_que_mejorar.length) fd.append("problemas", lo_que_mejorar.join("; "));
+      if (formData) Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
+      if (mainProblemsDetected.length)   fd.append("problemas", mainProblemsDetected.join("; "));
+      if (regenerationPriorities.length) fd.append("mejoras",   regenerationPriorities.join("; "));
 
       const res  = await fetch(`${API_BASE}/api/generate`, { method: "POST", body: fd });
       const data = await res.json();
@@ -641,37 +636,42 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       <section className="flex flex-col gap-3 rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${veredictoClass(veredicto)}`}>
-              {veredicto}
+            <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
+              {shortLabel}
             </span>
-            {perfil_aplicado && (
+            {profileApplied && (
               <span className="inline-block rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-[10px] font-black text-purple-300">
-                Perfil: {perfil_aplicado}
+                {profileApplied}
+              </span>
+            )}
+            {platformDetected && (
+              <span className="inline-block rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-white/40">
+                📱 {platformDetected}
               </span>
             )}
           </div>
           <h2 className="mt-2 text-2xl font-black sm:text-3xl">Análisis completado</h2>
+          {scoreLabel && (
+            <p className="mt-1 text-sm text-white/40">{scoreLabel}</p>
+          )}
         </div>
         <Btn variant="ghost" onClick={onReset} small>← Nuevo análisis</Btn>
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 xl:grid-cols-[300px_1fr]">
 
         {/* ── LEFT col ── */}
         <div className="space-y-5">
 
-          {/* Panda Score */}
-          <div className="flex flex-col items-center gap-5 rounded-[32px] border border-white/10 bg-white/[0.04] p-6 text-center backdrop-blur-xl">
-            <ScoreCircle score={score_final} />
+          {/* Score ring */}
+          <div className="flex flex-col items-center gap-4 rounded-[32px] border border-white/10 bg-white/[0.04] p-6 text-center backdrop-blur-xl">
+            <ScoreCircle score={pandaScore} />
+            {scoreInterpretation && (
+              <p className="text-xs leading-relaxed text-white/50 max-w-[220px]">{scoreInterpretation}</p>
+            )}
             <div className={`w-full rounded-2xl py-2.5 text-sm font-black text-white ${meta.bg}`}>
-              {meta.icon} {accion_recomendada}
+              {meta.icon} {accionRecomendada}
             </div>
-          </div>
-
-          {/* Diagnóstico */}
-          <div className="rounded-[32px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
-            <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-white/30">Diagnóstico</p>
-            <p className="text-sm leading-relaxed text-white/70">{resumen}</p>
           </div>
 
           {/* Arte original */}
@@ -680,8 +680,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
               <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-white/30">Arte original</p>
               <img src={preview} alt="Arte original" className="w-full rounded-2xl object-contain" />
               <div className="mt-3 text-center">
-                <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${veredictoClass(veredicto)}`}>
-                  Score: {score_final}/100
+                <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
+                  Score: {pandaScore}/100
                 </span>
               </div>
             </div>
@@ -691,82 +691,59 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
         {/* ── RIGHT col ── */}
         <div className="space-y-5">
 
-          {/* Lo que funciona / Lo que mejorar */}
+          {/* Problems + Recommendations */}
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-[32px] border border-emerald-400/15 bg-emerald-400/5 p-5 backdrop-blur-xl">
-              <h3 className="mb-4 text-sm font-black text-emerald-300">✅ Lo que funciona</h3>
-              <ul className="space-y-3">
-                {lo_que_funciona.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-white/70">
-                    <span className="mt-0.5 flex-shrink-0 text-emerald-400">▸</span>{item}
-                  </li>
-                ))}
-              </ul>
-            </div>
             <div className="rounded-[32px] border border-red-400/15 bg-red-400/5 p-5 backdrop-blur-xl">
-              <h3 className="mb-4 text-sm font-black text-red-300">⚠️ Oportunidades de mejora</h3>
+              <h3 className="mb-4 text-sm font-black text-red-300">⚠️ Problemas detectados</h3>
               <ul className="space-y-3">
-                {lo_que_mejorar.map((item, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-white/70">
+                {mainProblemsDetected.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-white/65">
                     <span className="mt-0.5 flex-shrink-0 text-red-400">▸</span>{item}
                   </li>
                 ))}
               </ul>
             </div>
+            <div className="rounded-[32px] border border-emerald-400/15 bg-emerald-400/5 p-5 backdrop-blur-xl">
+              <h3 className="mb-4 text-sm font-black text-emerald-300">✅ Recomendaciones</h3>
+              <ul className="space-y-3">
+                {topRecommendations.map((item, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-white/65">
+                    <span className="mt-0.5 flex-shrink-0 text-emerald-400">▸</span>{item}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          {/* Panda Score desglose */}
+          {/* Panda Score — Desglose */}
           <div className="rounded-[32px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-xl font-black">Panda Score — Desglose</h3>
-              {perfil_aplicado && (
-                <span className="text-[10px] font-black text-white/25">{perfil_aplicado}</span>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black">Panda Score — Desglose</h3>
+                <p className="mt-0.5 text-[10px] text-white/30">10 criterios evaluados, ponderados por objetivo</p>
+              </div>
+              {profileApplied && (
+                <span className="text-[10px] font-black text-white/20 text-right max-w-[120px] leading-snug">{profileApplied}</span>
               )}
             </div>
-            {activeCriterios.length > 0 ? (
-              <div className="space-y-4">
-                {activeCriterios.map(({ label, key }) => {
-                  const val = desglose[key] ?? 0;
-                  const max = pesos_activos[key] ?? 20;
-                  const pct = Math.round((val / max) * 100);
-                  return (
-                    <div key={key}>
-                      <div className="mb-1.5 flex items-center justify-between gap-4">
-                        <span className="text-sm font-bold text-white/75">{label}</span>
-                        <span className="text-xs font-black tabular-nums text-white/60">
-                          {val}/{max}
-                          <span className="ml-1 text-white/30">({pct}%)</span>
-                        </span>
-                      </div>
-                      <Bar value={val} max={max} />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              // Fallback: show all criteria with raw values
-              <div className="space-y-4">
-                {ALL_CRITERIOS.map(({ label, key }) => {
-                  const val = desglose[key] ?? 0;
-                  return (
-                    <div key={key}>
-                      <div className="mb-1.5 flex items-center justify-between gap-4">
-                        <span className="text-sm font-bold text-white/75">{label}</span>
-                        <span className="text-sm font-black tabular-nums">{val}</span>
-                      </div>
-                      <Bar value={val} max={20} />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="space-y-3">
+              {sortedCategories.length > 0
+                ? sortedCategories.map(([key, cat]) => (
+                    <CategoryCard key={key} category={cat} />
+                  ))
+                : <p className="text-sm text-white/30">No hay datos de categorías disponibles.</p>
+              }
+            </div>
           </div>
 
-          {/* Prompt profesional */}
-          {prompt_profesional && (
+          {/* Regeneration Prompt */}
+          {regenerationPrompt && (
             <div className="rounded-[32px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-xl font-black">Prompt profesional</h3>
+                <div>
+                  <h3 className="text-xl font-black">Prompt profesional</h3>
+                  <p className="mt-0.5 text-[10px] text-white/30">Briefing para regenerar tu arte con IA</p>
+                </div>
                 <button
                   onClick={handleCopy}
                   className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 transition hover:bg-white/10"
@@ -774,14 +751,26 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                   {copied ? "✓ Copiado" : "Copiar"}
                 </button>
               </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/25 mb-3">
-                Usa este briefing para regenerar tu arte con la IA de tu preferencia
-              </p>
               <div className="max-h-52 overflow-y-auto rounded-2xl bg-black/40 p-4">
                 <p className="whitespace-pre-wrap text-xs leading-relaxed text-white/60">
-                  {prompt_profesional}
+                  {regenerationPrompt}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Regeneration priorities (if present) */}
+          {regenerationPriorities.length > 0 && (
+            <div className="rounded-[28px] border border-purple-400/15 bg-purple-400/5 p-5 backdrop-blur-xl">
+              <h3 className="mb-3 text-sm font-black text-purple-300">🎯 Prioridades de regeneración</h3>
+              <ol className="space-y-2">
+                {regenerationPriorities.map((item, i) => (
+                  <li key={i} className="flex gap-3 text-sm text-white/60">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-purple-400/20 text-[10px] font-black text-purple-300">{i + 1}</span>
+                    {item}
+                  </li>
+                ))}
+              </ol>
             </div>
           )}
         </div>
@@ -797,13 +786,11 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             </div>
             <h3 className="text-xl font-black sm:text-2xl">Arte optimizado para vender</h3>
             <p className="mt-1 text-sm text-white/45">
-              Aplica todas las correcciones detectadas conservando el concepto, logo y persona principal de tu arte original.
+              Aplica todas las correcciones detectadas conservando el concepto, logo y persona principal.
             </p>
           </div>
           {!generating && !generatedImage && (
-            <Btn onClick={handleGenerate} full>
-              🎨 Generar arte optimizado
-            </Btn>
+            <Btn onClick={handleGenerate} full>🎨 Generar arte optimizado</Btn>
           )}
           {!generating && generatedImage && (
             <div className="flex gap-3">
@@ -829,12 +816,10 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             <p className="text-sm font-bold text-red-300">⚠️ {genError}</p>
             {genError.includes("OPENAI_API_KEY") && (
               <p className="mt-2 text-xs text-white/40">
-                Agrega tu clave de OpenAI como <code className="text-cyan-300">OPENAI_API_KEY=sk-...</code> en las variables de entorno.
+                Agrega tu clave de OpenAI como <code className="text-cyan-300">OPENAI_API_KEY=sk-...</code> en las variables de entorno de Render.
               </p>
             )}
-            <div className="mt-4">
-              <Btn onClick={handleGenerate}>Intentar de nuevo</Btn>
-            </div>
+            <div className="mt-4"><Btn onClick={handleGenerate}>Intentar de nuevo</Btn></div>
           </div>
         )}
 
@@ -846,16 +831,14 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                   <p className="mb-2 text-center text-[10px] font-black uppercase tracking-widest text-white/30">Original</p>
                   <img src={preview} alt="Arte original" className="w-full rounded-xl object-contain" />
                   <div className="mt-2 flex justify-center">
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${veredictoClass(veredicto)}`}>
-                      Score: {score_final}/100
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
+                      Score: {pandaScore}/100
                     </span>
                   </div>
                 </div>
               )}
               <div className="overflow-hidden rounded-[24px] border border-purple-400/30 bg-black/20 p-3">
-                <p className="mb-2 text-center text-[10px] font-black uppercase tracking-widest text-purple-300">
-                  ✨ Arte optimizado
-                </p>
+                <p className="mb-2 text-center text-[10px] font-black uppercase tracking-widest text-purple-300">✨ Arte optimizado</p>
                 <img src={generatedImage} alt="Arte optimizado" className="w-full rounded-xl object-contain" />
                 <div className="mt-2 flex justify-center">
                   {genAnalyzing ? (
@@ -864,8 +847,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                       Calculando nuevo score…
                     </span>
                   ) : genScore !== null ? (
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${veredictoClass(genVeredicto)}`}>
-                      Score: {genScore}/100 — {genVeredicto}
+                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(genScore)}`}>
+                      Score: {genScore}/100 — {genShortLabel}
                     </span>
                   ) : (
                     <span className="rounded-full border border-purple-400/30 bg-purple-400/15 px-3 py-1 text-xs font-black text-purple-300">
@@ -875,7 +858,6 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                 </div>
               </div>
             </div>
-
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
               <Btn onClick={handleDownload} full>⬇️ Descargar arte optimizado</Btn>
               <Btn variant="ghost" onClick={handleGenerate} full>🔄 Regenerar versión</Btn>
@@ -903,12 +885,12 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
 // MAIN APP
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [view, setView]           = useState("upload");
-  const [preview, setPreview]     = useState(null);
+  const [view,      setView]      = useState("upload");
+  const [preview,   setPreview]   = useState(null);
   const [imageFile, setImageFile] = useState(null);
-  const [analysis, setAnalysis]   = useState(null);
-  const [formData, setFormData]   = useState(null);
-  const [error, setError]         = useState(null);
+  const [analysis,  setAnalysis]  = useState(null);
+  const [formData,  setFormData]  = useState(null);
+  const [error,     setError]     = useState(null);
 
   const handleAnalyze = async (file, form) => {
     setImageFile(file);
@@ -921,11 +903,9 @@ export default function App() {
       const fd = new FormData();
       fd.append("image", file);
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-
       const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error desconocido");
-
       setAnalysis(data.analysis);
       setView("results");
     } catch (err) {
@@ -935,12 +915,8 @@ export default function App() {
   };
 
   const handleReset = () => {
-    setView("upload");
-    setAnalysis(null);
-    setPreview(null);
-    setImageFile(null);
-    setFormData(null);
-    setError(null);
+    setView("upload"); setAnalysis(null); setPreview(null);
+    setImageFile(null); setFormData(null); setError(null);
   };
 
   return (
@@ -962,20 +938,12 @@ export default function App() {
           <div className="ml-auto flex flex-shrink-0 gap-1.5">
             <button
               onClick={() => setView("results")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                view === "results" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"
-              }`}
-            >
-              Resultado
-            </button>
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${view === "results" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"}`}
+            >Resultado</button>
             <button
               onClick={handleReset}
-              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"
-              }`}
-            >
-              Nuevo
-            </button>
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${view === "upload" ? "bg-white text-black" : "text-white/60 hover:bg-white/10"}`}
+            >Nuevo</button>
           </div>
         )}
       </header>
@@ -995,21 +963,13 @@ export default function App() {
 
           <nav className="mt-8 space-y-2">
             <div
-              onClick={() => view !== "analyzing" && analysis ? setView("results") : null}
-              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                view === "results" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"
-              }`}
-            >
-              Dashboard
-            </div>
+              onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
+              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "results" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+            >Dashboard</div>
             <div
               onClick={handleReset}
-              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"
-              }`}
-            >
-              Subir diseño
-            </div>
+              className={`cursor-pointer rounded-2xl px-4 py-3 text-sm font-bold transition ${view !== "results" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+            >Subir diseño</div>
           </nav>
 
           {analysis ? (
@@ -1018,20 +978,18 @@ export default function App() {
               onClick={() => setView("results")}
             >
               <p className="text-[10px] font-black uppercase tracking-widest text-cyan-200">Último Panda Score</p>
-              <div className="mt-3 text-5xl font-black">{analysis.score_final}</div>
-              <p className="text-xs text-white/45">/100 — {analysis.veredicto}</p>
-              {analysis.perfil_aplicado && (
-                <p className="mt-1 text-[10px] text-white/30">{analysis.perfil_aplicado}</p>
+              <div className="mt-3 text-5xl font-black">{analysis.pandaScore}</div>
+              <p className="text-xs text-white/45">/100 — {analysis.shortLabel}</p>
+              {analysis.profileApplied && (
+                <p className="mt-1 text-[10px] text-white/30">{analysis.profileApplied}</p>
               )}
-              <div className={`mt-3 rounded-xl py-1.5 text-xs font-black text-white ${accionMeta(analysis.accion_recomendada).bg}`}>
-                {analysis.accion_recomendada}
+              <div className={`mt-3 rounded-xl py-1.5 text-xs font-black text-white ${accionMeta(analysis.accionRecomendada).bg}`}>
+                {analysis.accionRecomendada}
               </div>
             </div>
           ) : (
             <div className="mt-8 rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 p-5">
-              <p className="text-xs font-black uppercase tracking-[0.15em] text-cyan-200">
-                ¿Está listo para vender?
-              </p>
+              <p className="text-xs font-black uppercase tracking-[0.15em] text-cyan-200">¿Está listo para vender?</p>
               <p className="mt-3 text-sm leading-relaxed text-white/55">
                 Sube un diseño y recibe tu Panda Score — diagnóstico honesto y arte optimizado.
               </p>
