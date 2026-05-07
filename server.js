@@ -402,50 +402,24 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
   }
 });
 
-// ── Panda Proof preservation prompt ──────────────────────────────────────────
-const PANDA_PROOF_BASE_PROMPT = `Rediseña y mejora este arte publicitario manteniendo intacta su esencia comercial y visual. Preserva el concepto original, la oferta, el producto o servicio anunciado, la identidad visual de la marca, el logo y la persona o modelo principal.
+// ── Build surgical edit list for gpt-image-1 ─────────────────────────────────
+function buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions }) {
+  const lines = [];
 
-Tu objetivo es convertir el mismo arte en una versión más efectiva para conversión, especialmente en móvil. Mejora la claridad del mensaje, la jerarquía visual, la legibilidad, el balance de composición, el contraste, la fuerza del CTA y la percepción premium.
+  if (nicho && producto) {
+    lines.push(`Advertising image for: ${nicho} — promoting: ${producto}`);
+    lines.push(`Target audience: ${publico || "general"} | Platform: ${plataforma || "social media"} | Goal: ${objetivo || "conversion"}`);
+    if (oferta) lines.push(`Offer shown in the image: ${oferta} — do NOT change this price/offer`);
+  }
 
-PRIORIDADES (en orden):
-1. Preservar concepto, marca, logo y persona/modelo — NUNCA reemplazar
-2. Simplificar jerarquía visual a 3 niveles: titular / oferta-beneficio / CTA
-3. Reforzar el CTA — más visible, específico, orientado a acción
-4. Optimizar legibilidad en móvil — texto legible sin zoom
-5. Mejorar contraste y eliminar ruido visual
+  if (mejoras)   lines.push(`Improvements required: ${mejoras}`);
+  if (problemas) lines.push(`Problems to fix: ${problemas}`);
 
-REGLAS ABSOLUTAS:
-- NO reemplazar al sujeto principal por otro distinto
-- NO alterar el logo ni la identidad de marca
-- NO inventar precios o beneficios que no existen
-- NO reinventar — OPTIMIZAR`;
+  if (customInstructions) {
+    lines.push(`\nUSER-SPECIFIC INSTRUCTIONS (HIGHEST PRIORITY — apply exactly):\n${customInstructions}`);
+  }
 
-// ── Dynamic generation prompt builder ─────────────────────────────────────────
-function buildGenerationPrompt({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras }) {
-  const ofertaLine    = oferta    ? `La promoción u oferta principal es: ${oferta}.`    : "No se especificó oferta — no inventes precios.";
-  const problemasLine = problemas ? `Problemas detectados por el análisis: ${problemas}.` : "Aplica mejoras generales de legibilidad, jerarquía y conversión.";
-  const mejorasLine   = mejoras   ? `Prioridades de mejora: ${mejoras}.`               : "Prioriza: reforzar CTA, simplificar jerarquía, mejorar legibilidad móvil.";
-
-  return `Rediseña y mejora este arte publicitario para un negocio de tipo ${nicho}, promoviendo ${producto}, dirigido a ${publico}, para publicarse en ${plataforma} con objetivo de ${objetivo}. ${ofertaLine}
-
-PRESERVA INTACTO (reglas absolutas):
-- La persona o modelo principal — NO la reemplaces
-- El logo y la identidad visual de marca — NO lo alteres
-- El concepto central del anuncio — NO cambies la idea
-- La oferta y precios presentes — NO inventes datos
-
-${problemasLine}
-${mejorasLine}
-
-MEJORAS ESPECÍFICAS:
-- Jerarquía visual: 3 niveles claros → titular / oferta-beneficio / CTA
-- CTA: más visible, específico y orientado a acción inmediata
-- Legibilidad móvil: texto principal legible sin zoom en celular
-- Contraste: suficiente entre texto y fondo
-- Composición: elimina elementos que compiten innecesariamente
-- Percepción premium: limpio, ordenado, profesional
-
-El resultado debe ser una versión OPTIMIZADA del mismo arte — no una reinvención.`;
+  return lines.join("\n");
 }
 
 // ── Generate / Edit image (gpt-image-1) ──────────────────────────────────────
@@ -455,51 +429,47 @@ app.post("/api/generate", upload.single("image"), async (req, res) => {
 
     const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions } = req.body;
 
-    const sourcePrompt = (nicho && producto)
-      ? buildGenerationPrompt({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras })
-      : PANDA_PROOF_BASE_PROMPT;
+    const context = buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions });
 
-    // Append user's custom instructions (highest priority)
-    const finalPrompt = customInstructions
-      ? `${sourcePrompt}\n\nINSTRUCCIONES ADICIONALES DEL USUARIO (PRIORIDAD MÁXIMA — aplica estas correcciones específicas):\n${customInstructions}`
-      : sourcePrompt;
-
-    // Paso 1: Sonnet condensa el prompt para gpt-image-1
+    // Paso 1: Sonnet genera una lista de cambios QUIRÚRGICOS mínimos
     const reformatMsg = await client.messages.create({
       model:      "claude-sonnet-4-5",
-      max_tokens: 700,
+      max_tokens: 600,
       messages: [{
         role: "user",
-        content: `You are an image editing prompt engineer for gpt-image-1 (OpenAI).
-Condense the following creative brief into a single, clear editing instruction under 1800 characters.
+        content: `You are a surgical image-editing prompt engineer for gpt-image-1 (OpenAI image edit API).
 
-ABSOLUTE RULES — never break these:
-- OUTPUT must be the EXACT same aspect ratio and orientation as the input image
-- Do NOT add black bars, padding, or change canvas size in any way
-- Preserve ALL brand elements: logo, color palette, font style, photography
-- Do NOT replace the main person/model with a different person
-- Do NOT alter or reinterpret the logo or brand identity
-- Do NOT change the core concept of the ad
-- Do NOT invent prices or benefits not present in the original
-- If user added "INSTRUCCIONES ADICIONALES DEL USUARIO" they have HIGHEST priority — apply them precisely
+The user is EDITING an existing advertisement — NOT creating a new one. The source image is uploaded as reference.
+Your job: write a SHORT, SURGICAL list of ONLY the specific changes needed. Everything not mentioned must stay pixel-identical to the original.
 
-Write in English only. Start with: "Optimize this advertising image to improve conversion while preserving its core concept, main person/model, logo, and brand identity. Keep the exact same dimensions, format and aspect ratio:"
+ABSOLUTE RULES:
+- Keep the main person/model/subject EXACTLY as they appear — never replace or alter them
+- Keep the logo, brand name, and color palette EXACTLY as they appear
+- Keep all existing prices, phone numbers, and contact info EXACTLY as shown
+- Keep the same aspect ratio, canvas size, and orientation
+- Do NOT redesign or recreate from scratch — ONLY apply the listed targeted changes
+- If USER-SPECIFIC INSTRUCTIONS are provided, they have HIGHEST priority
 
-Brief:
-${finalPrompt}
+OUTPUT FORMAT — write in English, under 900 characters, starting exactly with:
+"This is an existing advertisement. Apply ONLY these specific targeted edits while keeping everything else in the image exactly as it is:"
 
-Reply with ONLY the condensed prompt (no explanation).`,
+Then list 3-6 concrete, minimal changes. Be specific (e.g. "increase font size of the phone number", "add stronger contrast behind the CTA text", "make the CTA button more prominent").
+
+Context about the image:
+${context || "General advertising image — improve readability, visual hierarchy, and CTA visibility."}
+
+Reply with ONLY the prompt text. No explanation.`,
       }],
     });
 
     const editPrompt = reformatMsg.content[0].text.trim().slice(0, 3900);
-    console.log("✏️  Edit prompt:", editPrompt.slice(0, 120) + "…");
+    console.log("✏️  Edit prompt:", editPrompt.slice(0, 150) + "…");
 
-    // Paso 2: Convertir imagen a PNG RGBA
+    // Paso 2: Convertir imagen a PNG RGBA (requerido por gpt-image-1 edit)
     const pngBuffer = await sharp(req.file.buffer).ensureAlpha().png().toBuffer();
     const imageFile = await toFile(pngBuffer, "arte.png", { type: "image/png" });
 
-    // Paso 3: Editar con gpt-image-1
+    // Paso 3: Editar con gpt-image-1 (imagen original como base)
     const openai   = getOpenAI();
     const response = await openai.images.edit({
       model:   "gpt-image-1",
