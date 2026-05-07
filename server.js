@@ -433,7 +433,7 @@ app.post("/api/generate", upload.single("image"), async (req, res) => {
 
     // Paso 1: Sonnet genera una lista de cambios QUIRÚRGICOS mínimos
     const reformatMsg = await client.messages.create({
-      model:      "claude-sonnet-4-5",
+      model:      "claude-opus-4-5",
       max_tokens: 600,
       messages: [{
         role: "user",
