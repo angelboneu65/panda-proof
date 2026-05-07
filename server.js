@@ -43,7 +43,10 @@ if (isProd) {
   app.use(express.static(distPath));
 }
 
-app.use(cors({ origin: "*" }));
+app.use(cors({
+  origin: (origin, cb) => cb(null, true),   // permite cualquier origen (Netlify, localhost, etc.)
+  credentials: true,
+}));
 app.use(express.json());
 
 // ── Health ────────────────────────────────────────────────────────────────────

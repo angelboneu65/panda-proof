@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 
+// En producción (Netlify) apunta al backend en Render; en dev usa el proxy local
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
 // ── Color helpers ─────────────────────────────────────────────────────────────
 const scoreGradient = (s) =>
   s >= 90 ? "from-emerald-400 to-green-500"
@@ -161,7 +164,7 @@ function UploadView({ onAnalyze, globalError }) {
     try {
       const fd = new FormData();
       fd.append("image", file);
-      const res  = await fetch("/api/extract", { method: "POST", body: fd });
+      const res  = await fetch(`${API_BASE}/api/extract`, { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.success) {
         setForm((f) => ({
@@ -478,7 +481,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       fd.append("image", blob, "arte-mejorado.png");
       Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
 
-      const res  = await fetch("/api/analyze", { method: "POST", body: fd });
+      const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error al analizar");
       setGenScore(data.analysis.score_final);
@@ -518,7 +521,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       const fd = new FormData();
       fd.append("image", imageFile);
 
-      const res  = await fetch("/api/generate", { method: "POST", body: fd });
+      const res  = await fetch(`${API_BASE}/api/generate`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error al generar imagen");
       setGenProgress(100);
@@ -790,7 +793,7 @@ export default function App() {
       fd.append("image", imageFile);
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
 
-      const res  = await fetch("/api/analyze", { method: "POST", body: fd });
+      const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error desconocido");
 
