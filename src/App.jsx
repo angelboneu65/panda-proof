@@ -534,30 +534,7 @@ function AnalyzingView() {
 // RESULTS VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
-  const [generating,     setGenerating]     = useState(false);
-  const [generatedImage, setGeneratedImage] = useState(null);
-  const [genError,       setGenError]       = useState(null);
-  const [genTick,        setGenTick]        = useState(0);
-  const [genProgress,    setGenProgress]    = useState(0);
-  const [genAnalyzing,   setGenAnalyzing]   = useState(false);
-  const [genScore,       setGenScore]       = useState(null);
-  const [genShortLabel,  setGenShortLabel]  = useState(null);
-  const [customPrompt,   setCustomPrompt]   = useState(regenerationPrompt || "");
-
-  // Auto-populate textarea with the professional prompt when analysis loads
-  useEffect(() => {
-    if (regenerationPrompt) setCustomPrompt(regenerationPrompt);
-  }, [regenerationPrompt]);
-
-  const genSteps = [
-    "Preservando concepto e identidad del arte…",
-    "Aplicando correcciones de jerarquía visual…",
-    "Ajustando legibilidad y contraste…",
-    "Reforzando el CTA para conversión…",
-    "Optimizando composición para móvil…",
-    "Añadiendo toques finales de calidad…",
-  ];
-
+  // Destructure FIRST so all variables are available to hooks below
   const {
     pandaScore            = 0,
     shortLabel            = "—",
@@ -573,6 +550,30 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     regenerationPriorities = [],
     regenerationPrompt    = "",
   } = analysis;
+
+  const [generating,     setGenerating]     = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(null);
+  const [genError,       setGenError]       = useState(null);
+  const [genTick,        setGenTick]        = useState(0);
+  const [genProgress,    setGenProgress]    = useState(0);
+  const [genAnalyzing,   setGenAnalyzing]   = useState(false);
+  const [genScore,       setGenScore]       = useState(null);
+  const [genShortLabel,  setGenShortLabel]  = useState(null);
+  const [customPrompt,   setCustomPrompt]   = useState(regenerationPrompt || "");
+
+  // Re-populate textarea if a different analysis is loaded (e.g. from history)
+  useEffect(() => {
+    setCustomPrompt(regenerationPrompt || "");
+  }, [regenerationPrompt]);
+
+  const genSteps = [
+    "Preservando concepto e identidad del arte…",
+    "Aplicando correcciones de jerarquía visual…",
+    "Ajustando legibilidad y contraste…",
+    "Reforzando el CTA para conversión…",
+    "Optimizando composición para móvil…",
+    "Añadiendo toques finales de calidad…",
+  ];
 
   const meta = accionMeta(accionRecomendada);
 
