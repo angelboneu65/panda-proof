@@ -170,38 +170,52 @@ function RainbowLogo({ progress = null }) {
   );
 }
 
-// ── Category card (shows score + explanation + recommendation) ────────────────
+// ── Category card (shows score + collapsible explanation + recommendation) ────
 function CategoryCard({ category }) {
+  const [expanded, setExpanded] = useState(false);
   const cfg = STATUS_COLORS[category.status] || STATUS_COLORS.needs_work;
   return (
-    <div className={`rounded-2xl border p-4 ${cfg.border} bg-white/[0.02]`}>
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="text-sm font-bold text-white/85">{category.label}</span>
-            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black ${cfg.bg} ${cfg.text}`}>
-              {category.statusLabel}
-            </span>
-            {category.weight > 0 && (
-              <span className="text-[10px] text-white/25">{category.weight}% peso</span>
-            )}
+    <div className={`rounded-2xl border ${cfg.border} bg-white/[0.02] overflow-hidden`}>
+      {/* Header — always visible, click to toggle */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full p-4 text-left"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-sm font-bold text-white/85">{category.label}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black ${cfg.bg} ${cfg.text}`}>
+                {category.statusLabel}
+              </span>
+              {category.weight > 0 && (
+                <span className="text-[10px] text-white/25">{category.weight}% peso</span>
+              )}
+            </div>
+            <Bar value={category.score} max={100} colorClass={cfg.bar} />
           </div>
-          <Bar value={category.score} max={100} colorClass={cfg.bar} />
+          <div className="shrink-0 flex items-center gap-2">
+            <div className="text-right">
+              <span className="text-xl font-black tabular-nums text-white">{category.score}</span>
+              <span className="text-xs text-white/30">/100</span>
+            </div>
+            <span className={`text-white/35 text-xs transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>
+              ▼
+            </span>
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <span className="text-xl font-black tabular-nums text-white">{category.score}</span>
-          <span className="text-xs text-white/30">/100</span>
+      </button>
+
+      {/* Explanation + Recommendation — collapsible */}
+      {expanded && (
+        <div className="px-4 pb-4 space-y-2 border-t border-white/8 pt-3">
+          <p className="text-xs leading-relaxed text-white/55">{category.explanation}</p>
+          <div className="flex gap-2">
+            <span className="mt-0.5 shrink-0 text-xs text-cyan-400">→</span>
+            <p className="text-xs leading-relaxed text-cyan-300/75">{category.recommendation}</p>
+          </div>
         </div>
-      </div>
-      {/* Explanation + Recommendation */}
-      <div className="mt-3 space-y-2 border-t border-white/8 pt-3">
-        <p className="text-xs leading-relaxed text-white/55">{category.explanation}</p>
-        <div className="flex gap-2">
-          <span className="mt-0.5 shrink-0 text-xs text-cyan-400">→</span>
-          <p className="text-xs leading-relaxed text-cyan-300/75">{category.recommendation}</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -520,7 +534,6 @@ function AnalyzingView() {
 // RESULTS VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
-  const [copied,         setCopied]         = useState(false);
   const [generating,     setGenerating]     = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [genError,       setGenError]       = useState(null);
@@ -529,7 +542,12 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const [genAnalyzing,   setGenAnalyzing]   = useState(false);
   const [genScore,       setGenScore]       = useState(null);
   const [genShortLabel,  setGenShortLabel]  = useState(null);
-  const [customPrompt,   setCustomPrompt]   = useState("");
+  const [customPrompt,   setCustomPrompt]   = useState(regenerationPrompt || "");
+
+  // Auto-populate textarea with the professional prompt when analysis loads
+  useEffect(() => {
+    if (regenerationPrompt) setCustomPrompt(regenerationPrompt);
+  }, [regenerationPrompt]);
 
   const genSteps = [
     "Preservando concepto e identidad del arte…",
@@ -561,12 +579,6 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   // Sort categories by weight (most important first)
   const sortedCategories = Object.entries(categories)
     .sort(([a], [b]) => (activeWeights[b] ?? 0) - (activeWeights[a] ?? 0));
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(regenerationPrompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
 
   const analyzeGeneratedImage = async (base64DataUrl) => {
     if (!formData) return;
@@ -742,29 +754,6 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
               }
             </div>
           </div>
-
-          {/* Regeneration Prompt */}
-          {regenerationPrompt && (
-            <div className="rounded-[32px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-black">Prompt profesional</h3>
-                  <p className="mt-0.5 text-[10px] text-white/30">Briefing para regenerar tu arte con IA</p>
-                </div>
-                <button
-                  onClick={handleCopy}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 transition hover:bg-white/10"
-                >
-                  {copied ? "✓ Copiado" : "Copiar"}
-                </button>
-              </div>
-              <div className="max-h-52 overflow-y-auto rounded-2xl bg-black/40 p-4">
-                <p className="whitespace-pre-wrap text-xs leading-relaxed text-white/60">
-                  {regenerationPrompt}
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* Regeneration priorities (if present) */}
           {regenerationPriorities.length > 0 && (
