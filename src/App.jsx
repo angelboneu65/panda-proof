@@ -623,8 +623,10 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
       const fd = new FormData();
       fd.append("image", imageFile);
       if (formData) Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
-      if (mainProblemsDetected.length)   fd.append("problemas", mainProblemsDetected.join("; "));
-      if (regenerationPriorities.length) fd.append("mejoras",   regenerationPriorities.join("; "));
+      if (mainProblemsDetected.length)    fd.append("problemas",      mainProblemsDetected.join("; "));
+      if (topRecommendations.length)      fd.append("recomendaciones", topRecommendations.join("; "));
+      if (regenerationPriorities.length)  fd.append("mejoras",         regenerationPriorities.join("; "));
+      if (regenerationPrompt)             fd.append("briefing",         regenerationPrompt);
       if (customPrompt.trim())            fd.append("customInstructions", customPrompt.trim());
 
       const res  = await fetch(`${API_BASE}/api/generate`, { method: "POST", body: fd });

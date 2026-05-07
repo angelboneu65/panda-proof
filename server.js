@@ -402,18 +402,32 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
   }
 });
 
-// ── Build surgical edit list for gpt-image-1 ─────────────────────────────────
-function buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions }) {
+// ── Build full analysis context for the edit prompt ──────────────────────────
+function buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, recomendaciones, mejoras, briefing, customInstructions }) {
   const lines = [];
 
   if (nicho && producto) {
-    lines.push(`Advertising image for: ${nicho} — promoting: ${producto}`);
+    lines.push(`ADVERTISEMENT CONTEXT:`);
+    lines.push(`Business type: ${nicho} | Product/Service: ${producto}`);
     lines.push(`Target audience: ${publico || "general"} | Platform: ${plataforma || "social media"} | Goal: ${objetivo || "conversion"}`);
-    if (oferta) lines.push(`Offer shown in the image: ${oferta} — do NOT change this price/offer`);
+    if (oferta) lines.push(`Offer/price in the image: ${oferta} — preserve exactly, do NOT change`);
   }
 
-  if (mejoras)   lines.push(`Improvements required: ${mejoras}`);
-  if (problemas) lines.push(`Problems to fix: ${problemas}`);
+  if (problemas) {
+    lines.push(`\nPROBLEMS DETECTED BY ANALYSIS (fix these):\n${problemas}`);
+  }
+
+  if (recomendaciones) {
+    lines.push(`\nTOP RECOMMENDATIONS FROM ANALYSIS (apply these):\n${recomendaciones}`);
+  }
+
+  if (mejoras) {
+    lines.push(`\nREGENERATION PRIORITIES (in order of impact):\n${mejoras}`);
+  }
+
+  if (briefing) {
+    lines.push(`\nPROFESSIONAL CREATIVE BRIEFING (follow this direction):\n${briefing}`);
+  }
 
   if (customInstructions) {
     lines.push(`\nUSER-SPECIFIC INSTRUCTIONS (HIGHEST PRIORITY — apply exactly):\n${customInstructions}`);
@@ -427,9 +441,9 @@ app.post("/api/generate", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
 
-    const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions } = req.body;
+    const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, recomendaciones, mejoras, briefing, customInstructions } = req.body;
 
-    const context = buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras, customInstructions });
+    const context = buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, recomendaciones, mejoras, briefing, customInstructions });
 
     // Paso 1: Sonnet genera una lista de cambios QUIRÚRGICOS mínimos
     const reformatMsg = await client.messages.create({
