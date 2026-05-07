@@ -22,7 +22,18 @@
     <title>Panda Proof — Director Creativo IA</title>
     <meta name="description" content="Analiza tus artes publicitarios con IA. Puntuación creativa, jerarquía visual, legibilidad y recomendaciones concretas para vender más." />
 
-    <!-- Safe area insets for iPhone notch -->
+    <!-- Open Graph / Twitter -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Panda Proof — Director Creativo IA" />
+    <meta property="og:description" content="Analiza tus artes publicitarios con IA y descubre si están listos para vender." />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Format detection (avoid auto phone-link in iOS) -->
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Safe area insets + mobile polish -->
     <style>
       :root {
         --sat: env(safe-area-inset-top);
@@ -30,12 +41,30 @@
         --sal: env(safe-area-inset-left);
         --sar: env(safe-area-inset-right);
       }
+      html {
+        -webkit-text-size-adjust: 100%;
+        -webkit-tap-highlight-color: transparent;
+        text-size-adjust: 100%;
+      }
       body {
         padding-top: env(safe-area-inset-top);
         padding-bottom: env(safe-area-inset-bottom);
         padding-left: env(safe-area-inset-left);
         padding-right: env(safe-area-inset-right);
+        background: #070812;
+        overscroll-behavior-y: none;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
+      /* iOS: prevent input zoom (font-size >= 16px) */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+      /* Hide scrollbar utility for nav pills */
+      .scrollbar-none::-webkit-scrollbar { display: none; }
+      .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+      /* Prevent text selection on UI chrome (logo, buttons emojis) */
+      button, [role="button"] { -webkit-user-select: none; user-select: none; }
     </style>
   </head>
   <body>

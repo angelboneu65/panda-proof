@@ -1,19 +1,24 @@
 {
-  "name": "Panda Proof",
+  "name": "Panda Proof — Director Creativo IA",
   "short_name": "Panda Proof",
-  "description": "Analiza tus artes publicitarios con IA y descubre si están listos para vender.",
+  "description": "Analiza tus artes publicitarios con IA y descubre si están listos para vender. Panda Score, diagnóstico CTA, legibilidad móvil y arte optimizado.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "background_color": "#070812",
   "theme_color": "#070812",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
   "lang": "es",
-  "categories": ["business", "productivity"],
+  "dir": "ltr",
+  "categories": ["business", "productivity", "design"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/apple-touch-icon.png",
       "sizes": "180x180",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icon-192.png",
@@ -32,6 +37,15 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Subir nuevo diseño",
+      "short_name": "Subir",
+      "description": "Analizar un nuevo arte",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ],
   "screenshots": [

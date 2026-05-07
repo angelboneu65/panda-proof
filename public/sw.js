@@ -1,5 +1,5 @@
 // Panda Proof — Service Worker
-const CACHE = "panda-proof-v1";
+const CACHE = "panda-proof-v2";
 
 const SHELL = [
   "/",
