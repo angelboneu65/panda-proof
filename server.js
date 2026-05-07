@@ -28,7 +28,6 @@ const app    = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// OpenAI se inicializa solo cuando hay clave para no crashear al arrancar
 const getOpenAI = () => {
   if (!process.env.OPENAI_API_KEY)
     throw new Error("OPENAI_API_KEY no configurada en .env");
@@ -36,7 +35,7 @@ const getOpenAI = () => {
 };
 
 app.use(cors({
-  origin: (origin, cb) => cb(null, true),   // permite cualquier origen (Netlify, localhost, etc.)
+  origin: (origin, cb) => cb(null, true),
   credentials: true,
 }));
 app.use(express.json());
@@ -91,6 +90,80 @@ Basa tus inferencias en los elementos visuales, texto, colores y estilo de la im
   }
 });
 
+// ── Panda Score — weight profiles per conversion objective ────────────────────
+const WEIGHT_PROFILES = {
+  "Mensajes / WhatsApp": {
+    perfil: "Conversión directa — Mensajes",
+    pesos: {
+      cta: 20, claridad_mensaje: 15, fuerza_oferta: 15, legibilidad_movil: 15,
+      confianza_credibilidad: 10, jerarquia_visual: 10, relevancia_publico: 10,
+      calidad_visual: 5, relevancia_nicho: 0, friccion_conversion: 0,
+    },
+  },
+  "Ventas directas": {
+    perfil: "Venta online / E-commerce",
+    pesos: {
+      fuerza_oferta: 20, claridad_mensaje: 20, confianza_credibilidad: 15, cta: 15,
+      legibilidad_movil: 10, calidad_visual: 10, friccion_conversion: 10,
+      jerarquia_visual: 0, relevancia_nicho: 0, relevancia_publico: 0,
+    },
+  },
+  "Reservas": {
+    perfil: "Captación de reservas / Citas",
+    pesos: {
+      cta: 18, claridad_mensaje: 15, confianza_credibilidad: 15, fuerza_oferta: 12,
+      legibilidad_movil: 12, jerarquia_visual: 10, relevancia_publico: 10,
+      calidad_visual: 8, relevancia_nicho: 0, friccion_conversion: 0,
+    },
+  },
+  "Llamadas": {
+    perfil: "Captación telefónica",
+    pesos: {
+      cta: 20, confianza_credibilidad: 18, claridad_mensaje: 15, fuerza_oferta: 12,
+      legibilidad_movil: 12, jerarquia_visual: 10, relevancia_publico: 8,
+      calidad_visual: 5, relevancia_nicho: 0, friccion_conversion: 0,
+    },
+  },
+  "Tráfico web": {
+    perfil: "Generación de tráfico web",
+    pesos: {
+      claridad_mensaje: 18, cta: 18, fuerza_oferta: 15, jerarquia_visual: 12,
+      legibilidad_movil: 12, calidad_visual: 10, relevancia_publico: 10,
+      confianza_credibilidad: 5, relevancia_nicho: 0, friccion_conversion: 0,
+    },
+  },
+  "Reconocimiento de marca": {
+    perfil: "Branding y awareness",
+    pesos: {
+      calidad_visual: 20, relevancia_nicho: 20, relevancia_publico: 20,
+      jerarquia_visual: 15, claridad_mensaje: 10, confianza_credibilidad: 10,
+      cta: 5, fuerza_oferta: 0, legibilidad_movil: 0, friccion_conversion: 0,
+    },
+  },
+  "Captación de leads": {
+    perfil: "Lead generation",
+    pesos: {
+      fuerza_oferta: 18, cta: 18, confianza_credibilidad: 15, claridad_mensaje: 15,
+      legibilidad_movil: 12, jerarquia_visual: 10, relevancia_publico: 8,
+      calidad_visual: 4, relevancia_nicho: 0, friccion_conversion: 0,
+    },
+  },
+};
+
+const DEFAULT_PROFILE = {
+  perfil: "Performance balanceado",
+  pesos: {
+    claridad_mensaje: 12, fuerza_oferta: 12, jerarquia_visual: 10,
+    cta: 14, legibilidad_movil: 10, relevancia_nicho: 8,
+    relevancia_publico: 8, confianza_credibilidad: 10,
+    calidad_visual: 8, friccion_conversion: 8,
+  },
+};
+
+function getWeightProfile(objetivo) {
+  return WEIGHT_PROFILES[objetivo] || DEFAULT_PROFILE;
+}
+
 // ── Analyze ───────────────────────────────────────────────────────────────────
 app.post("/api/analyze", upload.single("image"), async (req, res) => {
   try {
@@ -124,103 +197,185 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
   }
 });
 
-// ── Prompt builder ────────────────────────────────────────────────────────────
+// ── Prompt builder — Panda Score system ───────────────────────────────────────
 function buildPrompt({ nicho, producto, publico, plataforma, objetivo, oferta }) {
-  const year = new Date().getFullYear();
-  return `Eres un director creativo con 20 años de experiencia en campañas de performance para marcas de consumo masivo, spas, clínicas, restaurantes y e-commerce en Latinoamérica y Puerto Rico. Eres un mentor apasionado: tu objetivo es ayudar al negocio a crecer, no solo señalar errores. Combinás honestidad con empatía — reconocés el esfuerzo detrás de cada diseño y dás feedback constructivo que motiva a mejorar.
+  const { perfil, pesos } = getWeightProfile(objetivo);
+
+  const criteriaBlock = Object.entries({
+    claridad_mensaje:    { label: "Claridad del mensaje",       desc: `¿Se entiende en 1–2 segundos qué se vende, a quién y por qué actuar ahora?` },
+    fuerza_oferta:       { label: "Fuerza de la oferta",        desc: "¿La oferta/precio se percibe concreta, atractiva y con sentido de urgencia?" },
+    jerarquia_visual:    { label: "Jerarquía visual",           desc: "¿Existe un recorrido claro: titular → beneficio/oferta → CTA? ¿Hay 3 niveles de peso visual?" },
+    cta:                 { label: "CTA / Llamado a la acción",  desc: "¿La acción está clara, domina visualmente, es específica y urgente?" },
+    legibilidad_movil:   { label: "Legibilidad móvil",          desc: "¿Todo el texto es legible en pantalla de celular sin hacer zoom?" },
+    relevancia_nicho:    { label: "Relevancia con el nicho",    desc: `¿El arte se siente correcto para un negocio de tipo "${nicho}"?` },
+    relevancia_publico:  { label: "Relevancia con el público",  desc: `¿El mensaje y la estética conectan auténticamente con "${publico}"?` },
+    confianza_credibilidad: { label: "Confianza y credibilidad", desc: "¿El arte transmite seguridad, autoridad profesional y legitimidad de marca?" },
+    calidad_visual:      { label: "Calidad visual premium",     desc: "¿Se ve limpio, coherente, bien ejecutado y con estética de pauta profesional?" },
+    friccion_conversion: { label: "Fricción de conversión",     desc: "¿Hay elementos confusos, contradictorios o que dificulten que el usuario tome acción?" },
+  })
+    .map(([key, { label, desc }], i) => {
+      const max = pesos[key] ?? 0;
+      if (max === 0) return `${i + 1}. ${label} (0 pts — no aplica para objetivo "${objetivo}"): ${desc}`;
+      return `${i + 1}. ${label} (0-${max} pts): ${desc}`;
+    })
+    .join("\n");
+
+  const pesosJSON = JSON.stringify(pesos);
+
+  return `Eres Panda Proof, un director creativo senior con 20 años de experiencia en campañas de performance para marcas de consumo masivo, spas, clínicas, restaurantes y e-commerce en Latinoamérica y Puerto Rico. Combinas honestidad con empatía — reconoces el esfuerzo detrás de cada diseño y das feedback constructivo orientado a resultados comerciales reales.
 
 CONTEXTO DEL ARTE A EVALUAR:
-- Negocio: ${nicho}
-- Producto/Servicio: ${producto}
+- Negocio / Nicho: ${nicho}
+- Producto o servicio: ${producto}
 - Público objetivo: ${publico}
 - Plataforma destino: ${plataforma}
 - Objetivo de conversión: ${objetivo}
-${oferta ? `- Oferta/Precio en el arte: ${oferta}` : "— Sin oferta de precio explícita"}
+- Perfil de evaluación activo: ${perfil}
+${oferta ? `- Oferta o precio visible en el arte: ${oferta}` : "— Sin oferta de precio explícita"}
 
-ESTÁNDAR DE REFERENCIA — INSTAGRAM STORY OPTIMIZADO (hacia donde va este arte):
-Este arte será transformado en un Instagram Story vertical (1080×1920px) profesional para el mercado de Puerto Rico. El estándar con el que debe medirse es ese resultado final optimizado, que cumple:
-• Formato vertical 9:16 con márgenes seguros para no quedar cortado por la UI de Instagram
-• UN solo mensaje dominante visible en 1.5 segundos: oferta principal + beneficio clave
-• Jerarquía de 3 niveles: (1) visual de impacto / titular, (2) detalle del servicio + precio, (3) CTA específico
-• Texto grande, legible en mobile sin hacer zoom — mínimo 40px equivalente en Story
-• CTA directo del mercado PR: "Reserva hoy", "Agenda tu cita", "Escríbenos por WhatsApp"
-• Paleta de colores, logo e identidad de marca preservados 100%
-• Sin elementos redundantes ni texto pequeño que no se lee en pantalla de celular
-• Estilo premium y limpio — como pauta de Meta Ads profesional, no como flyer
+═══════════════════════════════════════════════════════════
+PANDA SCORE — SISTEMA DE EVALUACIÓN (100 puntos totales)
+Perfil activo: ${perfil.toUpperCase()}
+═══════════════════════════════════════════════════════════
 
-CRITERIOS DE EVALUACIÓN vs. ESE ESTÁNDAR (100 puntos totales):
-1. Claridad de la oferta (0-15): ¿Se entiende en 1.5 seg qué se vende, a qué precio y por qué actuar HOY? En el estándar Story esto es inmediato.
-2. Fuerza del mensaje de venta (0-15): ¿El copy habla de beneficios concretos para ${publico}? ¿O solo describe características? El estándar usa beneficio + urgencia.
-3. Jerarquía visual (0-15): ¿Hay un recorrido claro atención→interés→acción? El estándar Story tiene exactamente 3 niveles de peso visual.
-4. Legibilidad móvil (0-10): ¿Todo el texto es legible en pantalla de celular sin hacer zoom? El estándar Story es 100% mobile-first.
-5. Confianza y credibilidad (0-15): ¿Se proyecta profesionalismo, autoridad de marca, resultados reales? El estándar preserva identidad de marca para generar confianza.
-6. Adecuación al formato Story e identidad de marca (0-15): ¿El formato actual se acerca al 9:16 vertical optimizado? ¿La paleta y logo están presentes y bien posicionados?
-7. Llamado a la acción (0-10): ¿El CTA dice exactamente qué hacer? ¿Es urgente y específico como "Reserva hoy — cupos limitados"?
-8. Potencial de conversión global (0-5): Si este arte se pauta tal como está, ¿qué retorno generaría vs. el estándar Story optimizado?
+Los pesos de cada criterio se ajustan según el objetivo "${objetivo}".
+Criterios con 0 puntos = no aplican para este perfil de conversión.
+
+${criteriaBlock}
+
+PESOS ACTIVOS (JSON): ${pesosJSON}
+
+CÓMO CALCULAR EL SCORE FINAL:
+score_final = SUMA de todos los subscores del desglose.
+El score_final no puede ser mayor a 100 ni menor a 1.
 
 ESCALA DE VEREDICTO:
-90-100: Excelente — casi listo para pauta
-80-89: Muy bueno — pequeños ajustes y está perfecto
-70-79: Bueno — tiene base sólida, la versión mejorada lo llevará al siguiente nivel
-60-69: En desarrollo — buenos elementos, pero necesita la optimización Story para brillar
-40-59: Con potencial — el contenido es valioso, el formato Story lo va a transformar
-1-39: Punto de partida — la versión mejorada va a hacer una diferencia enorme
+90-100: Excelente — prácticamente listo para pauta
+80-89:  Muy bueno — pequeños ajustes y estará perfecto
+70-79:  Bueno — base sólida, la versión mejorada lo lleva al siguiente nivel
+60-69:  En desarrollo — buenos elementos, necesita optimización clara
+40-59:  Con potencial — el contenido es valioso, el formato necesita trabajo
+1-39:   Punto de partida — la versión mejorada hará una diferencia enorme
 
 TONO DEL ANÁLISIS:
-- Empático y motivador: reconocé el trabajo hecho, luego mostrá el camino de mejora
-- En "resumen": empezá reconociendo algo positivo del arte, luego explicá qué oportunidad de mejora tiene hacia el estándar Story
-- En "lo_que_funciona": sé genuino y específico — qué elementos reales tienen valor
-- En "lo_que_mejorar": sé concreto y accionable, pero con tono de coach — "una gran oportunidad es cambiar X por Y porque Z"
-- Recordá siempre que la versión mejorada con IA va a resolver exactamente estos puntos
+- Empático y orientado a resultados comerciales reales
+- "resumen": reconoce algo genuinamente positivo, luego muestra la oportunidad clave
+- "lo_que_funciona": específico y honesto — qué elementos reales tienen valor en este arte
+- "lo_que_mejorar": concreto y accionable, como un director creativo senior
+- "prompt_profesional": briefing detallado (mínimo 200 palabras) para regenerar el arte PRESERVANDO su esencia — incluye instrucciones específicas sobre qué conservar y qué mejorar
 
 Devuelve ÚNICAMENTE este JSON válido, sin texto adicional ni markdown:
 
 {
   "score_final": <número 1-100>,
   "veredicto": "<Excelente|Muy bueno|Bueno|En desarrollo|Con potencial|Punto de partida>",
-  "resumen": "<2-3 líneas empáticas: reconocé algo positivo, luego mostrá la oportunidad de mejora hacia el estándar Story optimizado>",
-  "lo_que_funciona": ["<punto genuino y específico 1>", "<punto genuino y específico 2>", "<punto genuino y específico 3>"],
-  "lo_que_mejorar": ["<oportunidad concreta y accionable 1>", "<oportunidad concreta y accionable 2>", "<oportunidad concreta y accionable 3>"],
+  "resumen": "<2-3 líneas empáticas y comercialmente orientadas>",
+  "lo_que_funciona": ["<punto genuino 1>", "<punto genuino 2>", "<punto genuino 3>"],
+  "lo_que_mejorar": ["<oportunidad concreta 1>", "<oportunidad concreta 2>", "<oportunidad concreta 3>"],
   "desglose": {
-    "claridad_oferta": <0-15>,
-    "mensaje_venta": <0-15>,
-    "jerarquia_visual": <0-15>,
-    "legibilidad_movil": <0-10>,
-    "confianza_profesional": <0-15>,
-    "adecuacion_nicho": <0-15>,
-    "cta": <0-10>,
-    "conversion_general": <0-5>
+    "claridad_mensaje": <0-${pesos.claridad_mensaje ?? 0}>,
+    "fuerza_oferta": <0-${pesos.fuerza_oferta ?? 0}>,
+    "jerarquia_visual": <0-${pesos.jerarquia_visual ?? 0}>,
+    "cta": <0-${pesos.cta ?? 0}>,
+    "legibilidad_movil": <0-${pesos.legibilidad_movil ?? 0}>,
+    "relevancia_nicho": <0-${pesos.relevancia_nicho ?? 0}>,
+    "relevancia_publico": <0-${pesos.relevancia_publico ?? 0}>,
+    "confianza_credibilidad": <0-${pesos.confianza_credibilidad ?? 0}>,
+    "calidad_visual": <0-${pesos.calidad_visual ?? 0}>,
+    "friccion_conversion": <0-${pesos.friccion_conversion ?? 0}>
   },
-  "prompt_profesional": "<instrucciones profesionales completas de rediseño — mínimo 200 palabras, específicas, accionables, como briefing de agencia>",
+  "pesos_activos": ${pesosJSON},
+  "perfil_aplicado": "${perfil}",
+  "prompt_profesional": "<briefing de rediseño — mínimo 200 palabras, específico, accionable, con instrucciones precisas para preservar la esencia del arte y mejorar su conversión>",
   "accion_recomendada": "<Publicarlo como está|Hacer ajustes menores|Rediseñarlo parcialmente|Rediseñarlo completo>"
 }`;
 }
 
-// ── Prompt fijo de Color Panda Media Lab para mejora de artes publicitarios ──
-const CPML_STORY_PROMPT = `Analyze the provided advertising image and improve it professionally. CRITICAL: Keep EXACTLY the same dimensions, format, orientation and aspect ratio as the original image — do NOT change the size or layout structure.
+// ── Panda Proof base preservation prompt ─────────────────────────────────────
+const PANDA_PROOF_BASE_PROMPT = `Rediseña y mejora este arte publicitario manteniendo intacta su esencia comercial y visual. Preserva el concepto original, la idea principal, la oferta, el producto o servicio anunciado, la identidad visual de la marca, el logo y la persona o modelo principal. No reemplaces la modelo, no cambies el logo, no cambies la marca y no alteres el concepto del anuncio.
 
-Goal: Make the existing ad cleaner, more professional and higher-converting for the Puerto Rico market, without altering its format.
+Tu objetivo es convertir el mismo arte en una versión más efectiva para conversión, especialmente en móvil. Mejora la claridad del mensaje, la jerarquía visual, la legibilidad, el balance de composición, el contraste, el orden visual, la fuerza del CTA y la percepción premium. Reduce ruido visual, evita saturación innecesaria, organiza la información en niveles claros y asegúrate de que la pieza pueda entenderse en 1–2 segundos.
 
-Instructions:
-1. PRESERVE: exact same dimensions, orientation (horizontal/vertical/square), overall layout structure, brand color palette, logo position, and all genuine offer details (prices, discounts, services).
-2. IMPROVE the text hierarchy: make the main offer/headline the most visually dominant element. Reduce or remove secondary text that clutters without adding value.
-3. IMPROVE legibility: increase font sizes for key text, ensure strong contrast between text and background, remove small print that can't be read on mobile.
-4. IMPROVE visual clarity: reduce competing visual elements, establish a clear focal point — one dominant image, one key message, one CTA.
-5. IMPROVE the CTA: make it specific and action-oriented for the Puerto Rico market — "Reserva hoy", "Agenda tu cita", "Escríbenos por WhatsApp", "Disponible por tiempo limitado".
-6. DO NOT invent prices, services, benefits, dates, conditions or discounts not present in the original. No medical claims or exaggerated promises.
-7. Result: a cleaner, more premium version of the same ad — same format, same brand identity, but with better visual hierarchy, stronger message and clearer CTA.
+Mantén la esencia original del diseño, pero optimízalo para que el usuario entienda rápidamente:
+1. qué se está ofreciendo,
+2. cuál es el beneficio o promoción principal,
+3. qué acción debe tomar.
 
-The final result must look like a professional upgrade of the original — not a completely different piece.`;
+La nueva versión debe sentirse más clara, más profesional, más limpia, más comercial y más lista para vender, sin perder el estilo base de la pieza. Si el anuncio ya tiene un buen concepto visual, consérvalo y solo mejora su ejecución.
+
+PRIORIDADES DE MEJORA (en orden):
+1. Preservar concepto, marca, logo y persona/modelo principal — NUNCA reemplazar
+2. Simplificar jerarquía visual a máximo 3 niveles: titular / oferta-beneficio / CTA
+3. Reforzar el CTA — más visible, específico y orientado a acción
+4. Optimizar legibilidad en móvil — texto principal legible sin zoom
+5. Mejorar contraste entre texto y fondo
+6. Eliminar elementos que compiten por atención innecesariamente
+7. CTA del mercado: "Reserva hoy", "Agenda tu cita", "Escríbenos por WhatsApp", "Llama ahora"
+
+REGLAS ABSOLUTAS:
+- NO reemplazar al sujeto principal por otro distinto
+- NO alterar el logo ni la identidad de marca
+- NO inventar precios o beneficios que no existen en el arte
+- NO hacer una reinvención — hacer una optimización
+- MANTENER el formato/orientación/dimensiones exactas del arte original`;
+
+// ── Dynamic generation prompt builder ─────────────────────────────────────────
+function buildGenerationPrompt({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras }) {
+  const ofertaLine = oferta
+    ? `La promoción u oferta principal es: ${oferta}.`
+    : "No se especificó oferta de precio explícita — no inventes precios.";
+
+  const problemasLine = problemas
+    ? `Los principales problemas detectados por el análisis son: ${problemas}.`
+    : "Aplica mejoras generales de legibilidad, jerarquía y conversión.";
+
+  const mejorasLine = mejoras
+    ? `Las prioridades de mejora son: ${mejoras}.`
+    : "Prioriza: reforzar CTA, simplificar jerarquía, mejorar legibilidad móvil.";
+
+  return `Rediseña y mejora este arte publicitario para un negocio de tipo ${nicho}, donde se está promoviendo ${producto}, dirigido a ${publico}, pensado para publicarse en ${plataforma} con el objetivo de ${objetivo}. ${ofertaLine}
+
+PRESERVA INTACTO (REGLAS ABSOLUTAS — nunca violar):
+- La persona o modelo principal — NO la reemplaces por otra persona distinta
+- El logo y la identidad visual de marca — NO lo alteres ni reinterpretes
+- El concepto central del anuncio — NO cambies la idea principal
+- El estilo visual base que ya funciona — NO reinventes, OPTIMIZA
+- La oferta y precios presentes — NO inventes datos que no están en el arte
+
+${problemasLine}
+${mejorasLine}
+
+MEJORA ESPECÍFICAMENTE:
+- Jerarquía visual: organiza en 3 niveles claros → titular / oferta-beneficio / CTA
+- CTA: hazlo más visible, específico y orientado a acción inmediata
+  • Para WhatsApp/mensajes: "Escríbenos hoy", "Reserva por WhatsApp"
+  • Para reservas/citas: "Reserva ahora", "Agenda tu cita"
+  • Para ventas: "Compra ahora", "Aprovecha hoy"
+- Legibilidad móvil: texto principal debe leerse sin zoom en celular
+- Contraste: texto sobre fondo con contraste suficiente
+- Composición: elimina elementos que compiten por atención innecesariamente
+- Percepción premium: limpio, ordenado, profesional — como pauta de agencia
+
+El resultado debe ser una versión OPTIMIZADA del mismo arte — no una reinvención.
+Mismo concepto + mejor ejecución = más conversión.`;
+}
 
 // ── Generate / Edit image (gpt-image-1) ──────────────────────────────────────
 app.post("/api/generate", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
 
-    // Paso 1: Sonnet adapta el brief fijo a instrucción concisa para gpt-image-1
+    const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras } = req.body;
+
+    // Build prompt: dynamic if context available, base otherwise
+    const sourcePrompt = (nicho && producto)
+      ? buildGenerationPrompt({ nicho, producto, publico, plataforma, objetivo, oferta, problemas, mejoras })
+      : PANDA_PROOF_BASE_PROMPT;
+
+    // Paso 1: Sonnet condensa el prompt para gpt-image-1
     const reformatMsg = await client.messages.create({
       model:      "claude-sonnet-4-5",
-      max_tokens: 600,
+      max_tokens: 700,
       messages: [{
         role: "user",
         content: `You are an image editing prompt engineer for gpt-image-1 (OpenAI).
@@ -229,21 +384,25 @@ Condense the following creative brief into a single, clear editing instruction u
 ABSOLUTE RULES — never break these:
 - OUTPUT must be the EXACT same aspect ratio and orientation as the input image (square stays square, horizontal stays horizontal, vertical stays vertical)
 - Do NOT add black bars, padding, or change canvas size in any way
-- Preserve ALL brand elements: logo, color palette, fonts style, photography
+- Preserve ALL brand elements: logo, color palette, font style, photography
+- Do NOT replace the main person/model with a different person — preserve the same subject
+- Do NOT alter or reinterpret the logo or brand identity
+- Do NOT change the core concept of the ad
+- Do NOT invent prices or benefits not present in the original
 
-Write in English only. Start with: "Edit this advertising image to improve it while keeping the exact same dimensions, format and aspect ratio as the original:"
+Write in English only. Start with: "Optimize this advertising image to improve conversion while preserving its core concept, main person/model, logo, and brand identity. Keep the exact same dimensions, format and aspect ratio:"
 
 Brief:
-${CPML_STORY_PROMPT}
+${sourcePrompt}
 
-Reply with ONLY the condensed prompt.`,
+Reply with ONLY the condensed prompt (no explanation).`,
       }],
     });
 
     const editPrompt = reformatMsg.content[0].text.trim().slice(0, 3900);
-    console.log("✏️  Edit prompt:", editPrompt.slice(0, 120) + "…");
+    console.log("✏️  Edit prompt:", editPrompt.slice(0, 150) + "…");
 
-    // Paso 2: Convertir imagen a PNG RGBA (requerido por gpt-image-1)
+    // Paso 2: Convertir imagen a PNG RGBA
     const pngBuffer = await sharp(req.file.buffer)
       .ensureAlpha()
       .png()
@@ -257,11 +416,10 @@ Reply with ONLY the condensed prompt.`,
       model:   "gpt-image-1",
       image:   imageFile,
       prompt:  editPrompt,
-      size:    "auto",       // gpt-image-1 elige el tamaño ideal según la imagen
-      quality: "high",       // máxima calidad disponible
+      size:    "auto",
+      quality: "high",
     });
 
-    // gpt-image-1 devuelve base64 directamente
     const base64 = response.data[0].b64_json;
     res.json({ success: true, image: `data:image/png;base64,${base64}` });
 
