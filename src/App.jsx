@@ -781,7 +781,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-purple-300/30 bg-purple-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-purple-200">
               <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-              Arte mejorado IA — gpt-image-1
+              Color Panda Media Lab is working
             </div>
             <h3 className="text-xl font-black sm:text-2xl">Arte optimizado para vender</h3>
             <p className="mt-1 text-sm text-white/45">
@@ -1138,89 +1138,161 @@ function MainApp({ session }) {
 
       <div className="relative mx-auto grid max-w-7xl gap-5 p-4 md:p-6 lg:grid-cols-[260px_1fr]">
 
-        {/* ── Sidebar — desktop only ── */}
-        <aside className="hidden self-start rounded-[32px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl backdrop-blur-xl lg:block lg:sticky lg:top-6">
-          <div className="flex flex-col items-center gap-2 pb-2">
-            <img src="/logo.png" alt="Panda Proof"
-              className="h-24 w-24 rounded-3xl object-contain bg-white p-1 shadow-xl" />
-            <div className="text-center">
-              <h1 className="text-lg font-black leading-tight">Panda Proof</h1>
-              <p className="text-[11px] font-medium text-white/40">Director Creativo IA</p>
-            </div>
-          </div>
+        {/* ── Sidebar ── */}
+        <aside className="self-start rounded-[32px] border border-white/10 bg-white/[0.04] shadow-2xl backdrop-blur-xl lg:sticky lg:top-6">
 
-          <nav className="mt-8 space-y-2">
-            <div
-              onClick={handleReset}
-              className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
-            >
-              <span>📤</span> Subir diseño
-            </div>
-            <div
-              onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
-              className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "results" ? "bg-white text-black" : analysis ? "text-white/50 hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
-            >
-              <span>📊</span> Resultado actual
-            </div>
-            {supabaseEnabled && session && (
-              <div
-                onClick={() => setView("history")}
-                className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "history" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
-              >
-                <span className="flex items-center gap-3"><span>🗂️</span> Mis análisis</span>
-                {history.length > 0 && (
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
-                    {history.length}
-                  </span>
-                )}
+          {/* ── MOBILE: barra horizontal compacta ── */}
+          <div className="lg:hidden">
+            {/* Logo + nombre */}
+            <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+              <img src="/logo.png" alt="Panda Proof" className="h-9 w-9 rounded-xl bg-white object-contain p-0.5 shadow" />
+              <div>
+                <p className="text-sm font-black leading-tight">Panda Proof</p>
+                <p className="text-[10px] text-white/40">Director Creativo IA</p>
               </div>
-            )}
-          </nav>
-
-          {analysis ? (
-            <div
-              className="mt-6 cursor-pointer rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 p-5 text-center"
-              onClick={() => setView("results")}
-            >
-              <p className="text-[10px] font-black uppercase tracking-widest text-cyan-200">Último Panda Score</p>
-              <div className="mt-3 text-5xl font-black">{analysis.pandaScore}</div>
-              <p className="text-xs text-white/45">/100 — {analysis.shortLabel}</p>
-              {analysis.profileApplied && (
-                <p className="mt-1 text-[10px] text-white/30">{analysis.profileApplied}</p>
+              {/* Score badge compacto */}
+              {analysis && (
+                <div
+                  className="ml-auto cursor-pointer rounded-2xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 px-3 py-1.5 text-center"
+                  onClick={() => setView("results")}
+                >
+                  <p className="text-[9px] font-black uppercase tracking-widest text-cyan-200">Score</p>
+                  <p className="text-lg font-black leading-none">{analysis.pandaScore}</p>
+                  <p className="text-[9px] text-white/40">/100</p>
+                </div>
               )}
-              <div className={`mt-3 rounded-xl py-1.5 text-xs font-black text-white ${accionMeta(analysis.accionRecomendada).bg}`}>
-                {analysis.accionRecomendada}
-              </div>
             </div>
-          ) : (
-            <div className="mt-8 rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 p-5">
-              <p className="text-xs font-black uppercase tracking-[0.15em] text-cyan-200">¿Está listo para vender?</p>
-              <p className="mt-3 text-sm leading-relaxed text-white/55">
-                Sube un diseño y recibe tu Panda Score — diagnóstico honesto y arte optimizado.
-              </p>
-            </div>
-          )}
 
-          {/* User footer (logged in) */}
-          {supabaseEnabled && session && (
-            <div className="mt-6 border-t border-white/10 pt-4">
-              <div className="mb-3 flex items-center gap-3 px-1">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white">
+            {/* Nav pills horizontales */}
+            <div className="flex items-center gap-2 overflow-x-auto px-3 py-3 scrollbar-none">
+              <button
+                onClick={handleReset}
+                className={`flex flex-shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 hover:bg-white/10"}`}
+              >
+                <span>📤</span> Subir diseño
+              </button>
+              <button
+                onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
+                className={`flex flex-shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition ${view === "results" ? "bg-white text-black" : analysis ? "bg-white/[0.06] text-white/60 hover:bg-white/10" : "bg-white/[0.03] text-white/20 cursor-not-allowed"}`}
+              >
+                <span>📊</span> Resultados
+              </button>
+              {supabaseEnabled && session && (
+                <button
+                  onClick={() => setView("history")}
+                  className={`flex flex-shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-bold transition ${view === "history" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 hover:bg-white/10"}`}
+                >
+                  <span>🗂️</span> Mis análisis
+                  {history.length > 0 && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
+                      {history.length}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Usuario móvil */}
+            {supabaseEnabled && session && (
+              <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2.5">
+                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-[10px] font-black text-white">
                   {userName[0]?.toUpperCase()}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-bold text-white/70">{userName}</p>
-                  <p className="truncate text-[10px] text-white/30">{session.user?.email}</p>
+                <p className="flex-1 truncate text-[11px] text-white/50">{userName}</p>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-white/40 hover:text-white/70"
+                >
+                  Salir
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ── DESKTOP: sidebar vertical completo ── */}
+          <div className="hidden p-5 lg:block">
+            <div className="flex flex-col items-center gap-2 pb-2">
+              <img src="/logo.png" alt="Panda Proof"
+                className="h-24 w-24 rounded-3xl object-contain bg-white p-1 shadow-xl" />
+              <div className="text-center">
+                <h1 className="text-lg font-black leading-tight">Panda Proof</h1>
+                <p className="text-[11px] font-medium text-white/40">Director Creativo IA</p>
+              </div>
+            </div>
+
+            <nav className="mt-8 space-y-2">
+              <div
+                onClick={handleReset}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+              >
+                <span>📤</span> Subir diseño
+              </div>
+              <div
+                onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "results" ? "bg-white text-black" : analysis ? "text-white/50 hover:bg-white/10" : "text-white/20 cursor-not-allowed"}`}
+              >
+                <span>📊</span> Resultado actual
+              </div>
+              {supabaseEnabled && session && (
+                <div
+                  onClick={() => setView("history")}
+                  className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "history" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+                >
+                  <span className="flex items-center gap-3"><span>🗂️</span> Mis análisis</span>
+                  {history.length > 0 && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
+                      {history.length}
+                    </span>
+                  )}
+                </div>
+              )}
+            </nav>
+
+            {analysis ? (
+              <div
+                className="mt-6 cursor-pointer rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 p-5 text-center"
+                onClick={() => setView("results")}
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest text-cyan-200">Último Panda Score</p>
+                <div className="mt-3 text-5xl font-black">{analysis.pandaScore}</div>
+                <p className="text-xs text-white/45">/100 — {analysis.shortLabel}</p>
+                {analysis.profileApplied && (
+                  <p className="mt-1 text-[10px] text-white/30">{analysis.profileApplied}</p>
+                )}
+                <div className={`mt-3 rounded-xl py-1.5 text-xs font-black text-white ${accionMeta(analysis.accionRecomendada).bg}`}>
+                  {analysis.accionRecomendada}
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/10 hover:text-white/80"
-              >
-                Cerrar sesión
-              </button>
-            </div>
-          )}
+            ) : (
+              <div className="mt-8 rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/20 to-cyan-400/10 p-5">
+                <p className="text-xs font-black uppercase tracking-[0.15em] text-cyan-200">¿Está listo para vender?</p>
+                <p className="mt-3 text-sm leading-relaxed text-white/55">
+                  Sube un diseño y recibe tu Panda Score — diagnóstico honesto y arte optimizado.
+                </p>
+              </div>
+            )}
+
+            {/* User footer (logged in) */}
+            {supabaseEnabled && session && (
+              <div className="mt-6 border-t border-white/10 pt-4">
+                <div className="mb-3 flex items-center gap-3 px-1">
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white">
+                    {userName[0]?.toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold text-white/70">{userName}</p>
+                    <p className="truncate text-[10px] text-white/30">{session.user?.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/10 hover:text-white/80"
+                >
+                  Cerrar sesión
+                </button>
+              </div>
+            )}
+          </div>
         </aside>
 
         {/* ── Main content ── */}
