@@ -701,28 +701,40 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const handleEditInCanva = async () => {
     setCanvaInfo(null);
     try {
-      // Convertir base64 → blob para clipboard
+      // Convertir base64 → File (para Web Share API)
       const res  = await fetch(generatedImage);
       const blob = await res.blob();
+      const file = new File([blob], "arte-pandaproof.png", { type: "image/png" });
 
-      // Copiar al clipboard (Chrome/Edge/Safari modernos)
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        setCanvaInfo("✅ Imagen copiada. Pega con Ctrl+V (Cmd+V en Mac) en Canva.");
-      } else {
-        // Fallback: descarga
-        handleDownload();
-        setCanvaInfo("⬇️ Imagen descargada. Súbela en Canva con drag & drop.");
+      // 📱 iPhone/Android: abrir share sheet nativo → Canva, Instagram, WhatsApp, etc.
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Arte optimizado — Panda Proof",
+          text:  "Editar en Canva",
+        });
+        setCanvaInfo("✅ Selecciona Canva en el menú para abrir y editar.");
+        return;
       }
 
-      // Abrir Canva en nueva pestaña (post para redes sociales por defecto)
-      window.open("https://www.canva.com/design?create&type=TADQ4DStcps", "_blank", "noopener");
-    } catch (err) {
-      console.error("Editar en Canva:", err);
-      // Fallback robusto: descarga + abre Canva
+      // 💻 Desktop fallback: clipboard + abrir Canva web
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        window.open("https://www.canva.com/design?create&type=TADQ4DStcps", "_blank", "noopener");
+        setCanvaInfo("✅ Imagen copiada. Pega con Ctrl+V (Cmd+V) en Canva.");
+        return;
+      }
+
+      // 🆘 Último recurso: descarga + abre Canva
       handleDownload();
       window.open("https://www.canva.com/", "_blank", "noopener");
-      setCanvaInfo("⬇️ Imagen descargada. Súbela en Canva manualmente.");
+      setCanvaInfo("⬇️ Imagen descargada. Súbela manualmente en Canva.");
+    } catch (err) {
+      // El usuario canceló el share sheet → no es un error real
+      if (err.name === "AbortError") return;
+      console.error("Editar en Canva:", err);
+      handleDownload();
+      setCanvaInfo("⬇️ Imagen descargada. Ábrela en Canva manualmente.");
     }
   };
 
