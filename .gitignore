@@ -26,3 +26,44 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ─── Capacitor (Android) ──────────────────────────────────────────────────────
+# Builds, gradle cache, local properties con paths del SDK
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+android/app/release/
+android/.idea/
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/
+
+# ─── Capacitor (iOS) ──────────────────────────────────────────────────────────
+ios/App/build/
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/App/output/
+ios/App/App/public/
+ios/DerivedData/
+ios/capacitor-cordova-ios-plugins/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+
+# ─── Tauri (Rust) ─────────────────────────────────────────────────────────────
+src-tauri/target/
+src-tauri/gen/
+src-tauri/Cargo.lock
+src-tauri/WixTools/
+
+# ─── Build outputs ────────────────────────────────────────────────────────────
+*.apk
+*.aab
+*.ipa
+*.dmg
+*.exe
+*.msi

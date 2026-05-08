@@ -14,10 +14,34 @@
     "start": "NODE_ENV=production node server.js",
     "preview": "vite preview",
     "generate-icons": "node scripts/generate-icons.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+
+    "cap:sync": "npm run build && npx cap sync",
+    "android": "npm run cap:sync && npx cap open android",
+    "android:run": "npm run cap:sync && npx cap run android",
+    "ios": "npm run cap:sync && npx cap open ios",
+    "ios:run": "npm run cap:sync && npx cap run ios",
+    "build:android": "npm run cap:sync && cd android && gradlew.bat assembleRelease",
+    "build:android:bundle": "npm run cap:sync && cd android && gradlew.bat bundleRelease",
+
+    "desktop": "tauri dev",
+    "desktop:build": "tauri build",
+    "build:desktop": "tauri build",
+    "tauri:icon": "tauri icon public/icon-512.png"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
+    "@capacitor/android": "^8.3.2",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.2.0",
+    "@capacitor/cli": "^8.3.2",
+    "@capacitor/core": "^8.3.2",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/ios": "^8.3.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@supabase/supabase-js": "^2.105.3",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
@@ -32,6 +56,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.2.4",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/cli": "^2.11.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -40,6 +66,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
     "vite": "^8.0.10"
   }
 }

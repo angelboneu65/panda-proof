@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Panda Proof</string>
+    <string name="title_activity_main">Panda Proof</string>
+    <string name="package_name">com.colorpandamedia.pandaproof</string>
+    <string name="custom_url_scheme">com.colorpandamedia.pandaproof</string>
+</resources>

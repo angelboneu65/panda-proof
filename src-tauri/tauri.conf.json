@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Panda Proof",
+  "version": "0.1.0",
+  "identifier": "com.colorpandamedia.pandaproof",
+  "build": {
+    "beforeDevCommand": "npm run client",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Panda Proof",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "backgroundColor": "#070812"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co https://panda-proof.onrender.com https://*.netlify.app; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "dmg", "app"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "© 2026 Color Panda Media Lab",
+    "category": "Productivity",
+    "shortDescription": "Director Creativo IA",
+    "longDescription": "Analiza tus artes publicitarios con IA. Panda Score, diagnóstico de CTA, legibilidad móvil y arte optimizado.",
+    "windows": {
+      "wix": {
+        "language": "es-ES"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}
