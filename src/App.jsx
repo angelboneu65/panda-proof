@@ -696,6 +696,36 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     a.click();
   };
 
+  const [canvaInfo, setCanvaInfo] = useState(null);
+
+  const handleEditInCanva = async () => {
+    setCanvaInfo(null);
+    try {
+      // Convertir base64 → blob para clipboard
+      const res  = await fetch(generatedImage);
+      const blob = await res.blob();
+
+      // Copiar al clipboard (Chrome/Edge/Safari modernos)
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        setCanvaInfo("✅ Imagen copiada. Pega con Ctrl+V (Cmd+V en Mac) en Canva.");
+      } else {
+        // Fallback: descarga
+        handleDownload();
+        setCanvaInfo("⬇️ Imagen descargada. Súbela en Canva con drag & drop.");
+      }
+
+      // Abrir Canva en nueva pestaña (post para redes sociales por defecto)
+      window.open("https://www.canva.com/design?create&type=TADQ4DStcps", "_blank", "noopener");
+    } catch (err) {
+      console.error("Editar en Canva:", err);
+      // Fallback robusto: descarga + abre Canva
+      handleDownload();
+      window.open("https://www.canva.com/", "_blank", "noopener");
+      setCanvaInfo("⬇️ Imagen descargada. Súbela en Canva manualmente.");
+    }
+  };
+
   return (
     <div className="space-y-5">
 
@@ -864,8 +894,9 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             <Btn onClick={handleGenerate} full>🎨 Generar arte optimizado</Btn>
           )}
           {!generating && generatedImage && (
-            <div className="flex gap-3">
-              <Btn onClick={handleDownload} full>⬇️ Descargar</Btn>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Btn onClick={handleEditInCanva} full>✨ Editar en Canva</Btn>
+              <Btn onClick={handleDownload} variant="ghost" full>⬇️ Descargar</Btn>
               <Btn onClick={handleGenerate} variant="ghost" full>🔄 Regenerar</Btn>
             </div>
           )}
@@ -929,10 +960,17 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                 </div>
               </div>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <Btn onClick={handleDownload} full>⬇️ Descargar arte optimizado</Btn>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Btn onClick={handleEditInCanva} full>✨ Editar en Canva</Btn>
+              <Btn onClick={handleDownload} variant="ghost" full>⬇️ Descargar</Btn>
               <Btn variant="ghost" onClick={handleGenerate} full>🔄 Regenerar versión</Btn>
             </div>
+
+            {canvaInfo && (
+              <div className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-center text-sm font-bold text-cyan-200">
+                {canvaInfo}
+              </div>
+            )}
           </div>
         )}
 
