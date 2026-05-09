@@ -4,6 +4,7 @@ import {
   saveAnalysis, listAnalyses, deleteAnalysis, rowToAnalysis,
 } from "./supabase";
 import AuthView from "./AuthView";
+import { CreateView, CampaignFlow } from "./CampaignFlow";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1115,7 +1116,7 @@ export default function App() {
 
 // ── Main app shell (after auth) ───────────────────────────────────────────────
 function MainApp({ session }) {
-  const [view,      setView]      = useState("upload"); // upload | analyzing | results | history
+  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign
   const [preview,   setPreview]   = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [analysis,  setAnalysis]  = useState(null);
@@ -1198,9 +1199,17 @@ function MainApp({ session }) {
   };
 
   const handleReset = () => {
-    setView("upload"); setAnalysis(null); setPreview(null);
+    setView("create"); setAnalysis(null); setPreview(null);
     setImageFile(null); setFormData(null); setError(null);
   };
+
+  // "Crear" tab → vuelve al chooser. "Analizar diseño" → flujo actual de upload.
+  const goToCreate = () => setView("create");
+  const startAnalyzeFlow = () => setView("upload");
+  const startCampaignFlow = () => setView("campaign");
+
+  // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign)?
+  const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign";
 
   return (
     <div className="min-h-screen bg-[#070812] text-white">
@@ -1245,10 +1254,10 @@ function MainApp({ session }) {
         {/* Nav pills row */}
         <div className="flex items-center gap-2 overflow-x-auto px-4 pb-3 scrollbar-none">
           <button
-            onClick={handleReset}
-            className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
+            onClick={goToCreate}
+            className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${isCreateTab ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
           >
-            <span>📤</span> Subir diseño
+            <span>✨</span> Crear
           </button>
           <button
             onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
@@ -1289,10 +1298,10 @@ function MainApp({ session }) {
 
             <nav className="mt-8 space-y-2">
               <div
-                onClick={handleReset}
-                className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "upload" || view === "analyzing" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+                onClick={goToCreate}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${isCreateTab ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
               >
-                <span>📤</span> Subir diseño
+                <span>✨</span> Crear
               </div>
               <div
                 onClick={() => analysis && view !== "analyzing" ? setView("results") : null}
@@ -1369,8 +1378,10 @@ function MainApp({ session }) {
               ⚠️ {error}
             </div>
           )}
+          {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} />}
           {view === "upload"    && <UploadView onAnalyze={handleAnalyze} globalError={null} />}
           {view === "analyzing" && <AnalyzingView />}
+          {view === "campaign"  && <CampaignFlow onExit={goToCreate} />}
           {view === "results"   && analysis && (
             <ResultsView
               analysis={analysis}

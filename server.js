@@ -34,7 +34,7 @@ const getOpenAI = () => {
 };
 
 app.use(cors({ origin: (origin, cb) => cb(null, true), credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "30mb" }));
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) =>
@@ -497,6 +497,244 @@ Reply with ONLY the prompt text. No explanation.`,
     res.json({ success: true, image: `data:image/png;base64,${base64}` });
   } catch (err) {
     console.error("❌ Generate:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// FOTO A CAMPAÑA — endpoints nuevos
+// ═════════════════════════════════════════════════════════════════════════════
+
+// 1) Analiza una foto de producto y devuelve contexto de campaña
+app.post("/api/analyze-photo", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
+
+    const imageBase64 = req.file.buffer.toString("base64");
+    const mediaType   = req.file.mimetype;
+
+    const message = await client.messages.create({
+      model:      "claude-haiku-4-5",
+      max_tokens: 1200,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+          {
+            type: "text",
+            text: `Eres un consultor de marketing y producto experto. Analiza esta foto y devuelve información estructurada para crear una campaña publicitaria.
+
+Devuelve ÚNICAMENTE este JSON, sin markdown ni texto extra:
+{
+  "detectedObject": "<qué objeto/producto/escena aparece>",
+  "detectedNiche": "<industria o nicho específico, ej: Bienestar y Spa, Restaurante, Joyería artesanal, etc.>",
+  "productName": "<nombre claro del producto o servicio>",
+  "shortDescription": "<una frase descriptiva breve>",
+  "mainBenefit": "<beneficio principal para el cliente>",
+  "problemSolved": "<problema concreto que resuelve>",
+  "targetAudience": "<público objetivo probable, ej: Mujeres 25-45 años profesionales>",
+  "offerType": "<UNA opción exacta de: Descuento %|2x1|Combo|Precio especial|Sin oferta>",
+  "suggestedRegularPrice": "<precio regular estimado, ej: $79>",
+  "suggestedPromoPrice": "<precio promocional estimado, ej: $49>",
+  "finalRecommendedPrice": "<precio final recomendado, ej: $59>",
+  "priceJustification": "<1-2 frases explicando por qué esos precios>",
+  "cta": "<call-to-action sugerido en español, ej: Reserva ahora>"
+}
+
+Sé específico y aterrizado. Responde en español los strings descriptivos.`,
+          },
+        ],
+      }],
+    });
+
+    const raw   = message.content[0].text;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: "No se pudo extraer la información." });
+
+    res.json({ success: true, data: JSON.parse(match[0]) });
+  } catch (err) {
+    console.error("❌ analyze-photo:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2) Analiza un logo y extrae rasgos de marca
+app.post("/api/extract-brand", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No se recibió logo." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
+
+    const imageBase64 = req.file.buffer.toString("base64");
+    const mediaType   = req.file.mimetype;
+
+    const message = await client.messages.create({
+      model:      "claude-haiku-4-5",
+      max_tokens: 800,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+          {
+            type: "text",
+            text: `Eres un experto en branding visual. Analiza este logo y extrae los rasgos de la marca.
+
+Devuelve ÚNICAMENTE este JSON, sin texto extra:
+{
+  "primaryColors": ["#hex1", "#hex2"],
+  "secondaryColors": ["#hex3", "#hex4"],
+  "visualStyle": "<estilo visual breve, ej: Minimalista moderno|Vibrante divertido|Premium clásico>",
+  "brandPersonality": "<personalidad, ej: Profesional confiable|Cercana y cálida|Lujosa elegante|Energética joven>",
+  "suggestedTypography": "<sugerencia tipográfica, ej: Sans-serif moderna como Inter o Helvetica Neue>"
+}
+
+Estima los hex de los colores con precisión. Responde los strings en español.`,
+          },
+        ],
+      }],
+    });
+
+    const raw   = message.content[0].text;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: "No se pudo analizar el logo." });
+
+    res.json({ success: true, brand: JSON.parse(match[0]) });
+  } catch (err) {
+    console.error("❌ extract-brand:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3) Genera 5 anuncios diferentes en paralelo
+app.post("/api/generate-campaign", async (req, res) => {
+  try {
+    const data = req.body || {};
+    if (!data.productName) return res.status(400).json({ error: "Faltan datos del producto." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
+    if (!process.env.OPENAI_API_KEY)    return res.status(500).json({ error: "OPENAI_API_KEY no configurada." });
+
+    // ── Paso 1: Estrategia con Claude — define los 5 ángulos ─────────────────
+    const strategy = await client.messages.create({
+      model:      "claude-opus-4-5",
+      max_tokens: 3000,
+      messages: [{
+        role: "user",
+        content: `Eres director creativo senior. Crea ESTRATEGIA para 5 anuncios DIFERENTES para esta campaña.
+
+PRODUCTO: ${data.productName}
+NICHO: ${data.niche || "general"}
+DESCRIPCIÓN: ${data.shortDescription || ""}
+BENEFICIO PRINCIPAL: ${data.mainBenefit || ""}
+PROBLEMA QUE RESUELVE: ${data.problemSolved || ""}
+PÚBLICO OBJETIVO: ${data.targetAudience || ""}
+TIPO DE OFERTA: ${data.offerType || "Sin oferta"}
+${data.regularPrice ? `PRECIO REGULAR: ${data.regularPrice}` : ""}
+${data.promoPrice ? `PRECIO PROMO: ${data.promoPrice}` : ""}
+${data.finalPrice ? `PRECIO FINAL: ${data.finalPrice}` : ""}
+${data.location?.city ? `UBICACIÓN: ${data.location.city}, ${data.location.country || ""}` : ""}
+${data.brand?.visualStyle ? `ESTILO DE MARCA: ${data.brand.visualStyle}` : ""}
+${data.brand?.brandPersonality ? `PERSONALIDAD: ${data.brand.brandPersonality}` : ""}
+${data.brand?.primaryColors?.length ? `COLORES MARCA: ${data.brand.primaryColors.join(", ")}` : ""}
+
+REGLAS para los 5 ángulos:
+- Adapta los nombres y enfoques al nicho específico (NO uses los mismos genéricos)
+- Cada ángulo debe ser estratégicamente DISTINTO (no 5 versiones del mismo)
+- Inspírate en estos arquetipos pero adáptalos: Oferta directa, Problema/Solución, Deseo emocional, Confianza/Autoridad, Urgencia/Temporada
+- Optimiza para Instagram y Facebook Ads
+- Legible en móvil
+- Máximo: 1 mensaje principal + 1 beneficio + 1 CTA por anuncio
+- Sin saturar de texto
+
+Devuelve ÚNICAMENTE este JSON, sin markdown:
+{
+  "adAngles": [
+    {
+      "angleName": "<nombre del ángulo, específico al nicho>",
+      "objective": "<objetivo del anuncio>",
+      "headline": "<titular corto y potente, máx 8 palabras>",
+      "subheadline": "<beneficio o sub-mensaje, máx 12 palabras>",
+      "cta": "<call to action, máx 4 palabras, ej: Reserva ahora>",
+      "designDirection": "<descripción visual: layout, paleta, ánimo, énfasis>",
+      "generationPrompt": "<prompt EN INGLÉS para gpt-image, 80-150 palabras: describe el ad completo, layout, hero del producto desde la foto, jerarquía visual, brand colors, typography, CTA prominent, mobile-optimized>"
+    }
+  ]
+}
+
+Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
+      }],
+    });
+
+    const rawStrat   = strategy.content[0].text;
+    const stratMatch = rawStrat.match(/\{[\s\S]*\}/);
+    if (!stratMatch) return res.status(500).json({ error: "No se pudo generar la estrategia." });
+
+    const parsed = JSON.parse(stratMatch[0]);
+    const adAngles = parsed.adAngles || [];
+    if (adAngles.length === 0) return res.status(500).json({ error: "Estrategia vacía." });
+
+    console.log(`🎯 Estrategia generada: ${adAngles.length} ángulos`);
+
+    // ── Paso 2: Genera las 5 imágenes en paralelo con gpt-image-2 ─────────────
+    const openai = getOpenAI();
+    const format = (data.formats && data.formats[0]) || "1080x1920";
+    const size   = format === "1080x1920" ? "1024x1536" : (format === "1080x1080" ? "1024x1024" : "1024x1024");
+
+    let sourcePng = null;
+    if (data.sourcePhoto) {
+      try {
+        const b64 = data.sourcePhoto.includes(",") ? data.sourcePhoto.split(",")[1] : data.sourcePhoto;
+        sourcePng = await sharp(Buffer.from(b64, "base64")).ensureAlpha().png().toBuffer();
+      } catch (e) {
+        console.warn("⚠️  No se pudo procesar sourcePhoto:", e.message);
+      }
+    }
+
+    const brandColors  = data.brand?.primaryColors?.join(", ") || "use confident brand accents";
+    const visualStyle  = data.brand?.visualStyle || "modern, premium";
+
+    const generations = await Promise.allSettled(
+      adAngles.slice(0, 5).map(async (angle) => {
+        try {
+          const fullPrompt = `${angle.generationPrompt}
+
+Brand color palette: ${brandColors}.
+Visual style: ${visualStyle}.
+Logo placement: top corner, small but visible.
+CTA: clearly visible, high contrast.
+Typography: clean, mobile-readable.
+The product from the source photo MUST be the visual hero of the composition.`;
+
+          const response = sourcePng
+            ? await openai.images.edit({
+                model:   "gpt-image-2",
+                image:   await toFile(sourcePng, "source.png", { type: "image/png" }),
+                prompt:  fullPrompt.slice(0, 3900),
+                size,
+                quality: "medium",
+              })
+            : await openai.images.generate({
+                model:   "gpt-image-2",
+                prompt:  fullPrompt.slice(0, 3900),
+                size,
+                quality: "medium",
+              });
+
+          const b64 = response.data[0].b64_json;
+          return { ...angle, generatedImage: `data:image/png;base64,${b64}` };
+        } catch (err) {
+          console.error(`❌ Imagen "${angle.angleName}":`, err.message);
+          return { ...angle, generatedImage: null, error: err.message };
+        }
+      })
+    );
+
+    const results = generations.map((g) =>
+      g.status === "fulfilled" ? g.value : { generatedImage: null, error: g.reason?.message || "fail" }
+    );
+
+    res.json({ success: true, adAngles: results });
+  } catch (err) {
+    console.error("❌ generate-campaign:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
