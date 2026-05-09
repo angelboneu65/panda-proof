@@ -41,6 +41,10 @@
         --sal: env(safe-area-inset-left);
         --sar: env(safe-area-inset-right);
       }
+      html, body {
+        overflow-x: hidden;
+        max-width: 100vw;
+      }
       html {
         -webkit-text-size-adjust: 100%;
         -webkit-tap-highlight-color: transparent;
@@ -56,6 +60,8 @@
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
+      /* Asegura que ninguna imagen se salga del contenedor */
+      img, video, canvas { max-width: 100%; height: auto; }
       /* iOS: prevent input zoom (font-size >= 16px) */
       input, select, textarea {
         font-size: 16px !important;

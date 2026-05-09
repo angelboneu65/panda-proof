@@ -990,33 +990,51 @@ function HistoryCard({ row, onLoad, onDelete }) {
   const date = new Date(a.createdAt).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
-    <div className="group relative rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/20 hover:bg-white/[0.05]">
+    <div className="group relative w-full rounded-[20px] border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl transition hover:border-white/20">
       <button
         onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este análisis?")) onDelete(a.id); }}
-        className="absolute right-3 top-3 rounded-lg bg-black/40 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-black text-white/60 opacity-100 transition hover:bg-red-600/50 hover:text-red-200 sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Eliminar"
       >✕</button>
 
       <div onClick={() => onLoad(row)} className="cursor-pointer">
-        <div className="flex items-start gap-3">
-          <div className={`flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${scoreGradient(a.pandaScore)} font-black text-white shadow-lg`}>
+        {/* Header: score badge + nicho + fecha */}
+        <div className="flex items-start gap-3 pr-8">
+          <div
+            className={`flex flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${scoreGradient(a.pandaScore)} font-black text-white shadow-lg`}
+            style={{ width: 56, height: 56, fontSize: 20 }}
+          >
             {a.pandaScore}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-white/85">{a.contextUsed.businessType || "Sin contexto"}</p>
-            <p className="truncate text-xs text-white/45">{a.contextUsed.whatIsBeingSold || "—"}</p>
-            <p className="mt-1 text-[10px] text-white/30">{date}</p>
+            <p className="text-[15px] font-bold leading-snug text-white/90 break-words">
+              {a.contextUsed.businessType || "Sin contexto"}
+            </p>
+            <p className="mt-0.5 text-[13px] leading-snug text-white/55 break-words line-clamp-2">
+              {a.contextUsed.whatIsBeingSold || "—"}
+            </p>
+            <p className="mt-1 text-[11px] text-white/30">{date}</p>
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-black ${scoreBadgeClass(a.pandaScore)}`}>
-            {a.shortLabel}
-          </span>
+
+        {/* Estado + Objetivo (con etiquetas) */}
+        <div className="mt-3 space-y-1 text-[13px] text-white/55">
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-white/30">Estado:</span>
+            <span className="font-bold">{a.shortLabel || "—"}</span>
+          </div>
           {a.profileApplied && (
-            <span className="truncate text-[10px] text-white/30">{a.profileApplied}</span>
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-white/30">Objetivo:</span>
+              <span className="break-words">{a.profileApplied}</span>
+            </div>
           )}
         </div>
-        <div className={`mt-2 rounded-lg py-1 text-center text-[10px] font-black text-white ${meta.bg}`}>
-          {meta.icon} {a.accionRecomendada}
+
+        {/* Acción recomendada - compacta */}
+        <div className={`mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-black text-white ${meta.bg}`}>
+          <span>{meta.icon}</span>
+          <span className="break-words text-center">{a.accionRecomendada}</span>
         </div>
       </div>
     </div>
@@ -1025,32 +1043,35 @@ function HistoryCard({ row, onLoad, onDelete }) {
 
 function SavedResultCard({ row, onDelete }) {
   const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
-  const handleDownload = () => {
-    if (!row.image_url) return;
-    const a = document.createElement("a");
-    a.href = row.image_url;
-    a.download = `panda-${(row.title || "arte").toLowerCase().replace(/\s+/g, "-")}.png`;
-    a.click();
-  };
 
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/20">
+    <div className="group relative w-full overflow-hidden rounded-[20px] border border-white/10 bg-white/[0.03] p-3 backdrop-blur-xl transition hover:border-white/20">
       <button
         onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este resultado?")) onDelete(row.id); }}
-        className="absolute right-3 top-3 z-10 rounded-lg bg-black/60 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-black text-white/60 opacity-100 transition hover:bg-red-600/50 hover:text-red-200 sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Eliminar"
       >✕</button>
 
       {row.image_url && (
-        <img src={row.image_url} alt={row.title || "Arte"} className="aspect-square w-full rounded-xl object-cover" />
+        <div className="overflow-hidden rounded-2xl bg-black/30">
+          <img
+            src={row.image_url}
+            alt={row.title || "Arte"}
+            className="block w-full object-contain"
+            style={{ maxHeight: "520px", height: "auto" }}
+          />
+        </div>
       )}
-      <div className="mt-3">
-        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">✨ Optimizado</p>
-        <p className="mt-1 truncate text-sm font-bold text-white/85">{row.title || "Arte optimizado"}</p>
-        <p className="mt-1 text-[10px] text-white/30">{date}</p>
+
+      <div className="mt-3 flex items-start gap-2">
+        <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">
+          ✨ Optimizado
+        </span>
+        <span className="text-[10px] text-white/30 ml-auto">{date}</span>
       </div>
-      <div className="mt-3">
-        <Btn variant="ghost" small full onClick={handleDownload} disabled={!row.image_url}>⬇ Descargar</Btn>
-      </div>
+      <p className="mt-1.5 text-[14px] font-bold leading-snug text-white/90 break-words">
+        {row.title || "Arte optimizado"}
+      </p>
     </div>
   );
 }
@@ -1058,26 +1079,29 @@ function SavedResultCard({ row, onDelete }) {
 function CampaignHistoryCard({ row, onLoad, onDelete }) {
   const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-purple-400/15 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-4 transition hover:border-purple-400/35">
+    <div className="group relative w-full overflow-hidden rounded-[20px] border border-purple-400/15 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-4 backdrop-blur-xl transition hover:border-purple-400/35">
       <button
         onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta campaña?")) onDelete(row.id); }}
-        className="absolute right-3 top-3 z-10 rounded-lg bg-black/40 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-black text-white/60 opacity-100 transition hover:bg-red-600/50 hover:text-red-200 sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Eliminar"
       >✕</button>
 
-      <div onClick={() => onLoad(row.id)} className="cursor-pointer">
+      <div onClick={() => onLoad(row.id)} className="cursor-pointer pr-8">
         <div className="flex items-start gap-3">
           {row.thumbnail ? (
-            <img src={row.thumbnail} alt="" className="h-14 w-14 flex-shrink-0 rounded-2xl object-cover ring-1 ring-white/10" />
+            <div className="flex-shrink-0 overflow-hidden rounded-2xl bg-black/30 ring-1 ring-white/10" style={{ width: 56, height: 56 }}>
+              <img src={row.thumbnail} alt="" className="block h-full w-full object-contain" />
+            </div>
           ) : (
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-2xl shadow-lg">📷</div>
+            <div className="flex flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-2xl shadow-lg" style={{ width: 56, height: 56 }}>📷</div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="rounded-full border border-purple-300/30 bg-purple-300/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-purple-200">Campaña</span>
-            </div>
-            <p className="mt-1 truncate text-sm font-bold text-white/85">{row.product_name || "Sin nombre"}</p>
-            <p className="truncate text-xs text-white/45">{row.niche || "—"}{row.city ? ` · ${row.city}` : ""}</p>
-            <p className="mt-1 text-[10px] text-white/30">{date}</p>
+            <span className="inline-block rounded-full border border-purple-300/30 bg-purple-300/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-purple-200">Campaña</span>
+            <p className="mt-1.5 text-[15px] font-bold leading-snug text-white/90 break-words">{row.product_name || "Sin nombre"}</p>
+            <p className="mt-0.5 text-[13px] text-white/55 break-words">
+              {row.niche || "—"}{row.city ? ` · ${row.city}` : ""}
+            </p>
+            <p className="mt-1 text-[11px] text-white/30">{date}</p>
           </div>
         </div>
       </div>
@@ -1087,53 +1111,71 @@ function CampaignHistoryCard({ row, onLoad, onDelete }) {
 
 function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset }) {
   const totalCount = history.length + campaigns.length + (savedResults?.length || 0);
+  const recentResults = (savedResults || []).slice(0, 3);
 
   if (totalCount === 0) {
     return (
-      <div className="space-y-5">
+      <div className="mx-auto w-full max-w-[430px] space-y-5 sm:max-w-2xl lg:max-w-none">
         <div>
           <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
-          <p className="mt-1 text-sm text-white/40">Aquí aparecerán todos tus análisis y campañas guardadas.</p>
+          <p className="mt-1 text-[13px] text-white/40">Aquí aparecerán tus análisis, campañas y resultados guardados.</p>
         </div>
-        <div className="rounded-[32px] border border-dashed border-white/10 bg-white/[0.02] p-12 text-center">
+        <Btn full onClick={onReset}>+ Nuevo análisis</Btn>
+        <div className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.02] p-8 text-center sm:p-12">
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-3xl">📊</div>
-          <p className="text-lg font-black text-white">Aún no has guardado nada</p>
-          <p className="mt-2 max-w-md mx-auto text-sm text-white/40">Cada Panda Score y cada campaña que generes se guarda automáticamente aquí.</p>
-          <div className="mt-6 inline-block">
-            <Btn onClick={onReset}>🐼 Empezar</Btn>
-          </div>
+          <p className="text-base font-black text-white sm:text-lg">Aún no has guardado nada</p>
+          <p className="mt-2 mx-auto max-w-md text-[13px] text-white/40">Cada Panda Score, campaña y arte optimizado que generes se guarda aquí automáticamente.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-7">
-      <div className="flex items-center justify-between gap-3">
+    <div className="mx-auto w-full max-w-[430px] space-y-7 sm:max-w-2xl lg:max-w-none">
+
+      {/* Título + contador + botón nuevo */}
+      <div className="space-y-3">
         <div>
           <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
-          <p className="mt-1 text-sm text-white/40">
-            {history.length} análisis · {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"} · {savedResults?.length || 0} resultados
+          <p className="mt-1 text-[13px] leading-snug text-white/40">
+            {history.length} {history.length === 1 ? "análisis" : "análisis"}
+            {" · "}
+            {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"}
+            {" · "}
+            {savedResults?.length || 0} {(savedResults?.length || 0) === 1 ? "resultado" : "resultados"}
           </p>
         </div>
-        <Btn onClick={onReset} small>+ Nuevo</Btn>
+        <Btn full onClick={onReset}>+ Nuevo análisis</Btn>
       </div>
 
-      {savedResults?.length > 0 && (
+      {/* Resultados optimizados — máximo 3 más recientes */}
+      {recentResults.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-300">✨ Resultados optimizados (últimos {savedResults.length})</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {savedResults.map((row) => (
+          <div>
+            <h3 className="text-[15px] font-black text-white/90">Resultados optimizados</h3>
+            <p className="text-[12px] text-white/40">Últimas imágenes guardadas</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recentResults.map((row) => (
               <SavedResultCard key={row.id} row={row} onDelete={onDeleteResult} />
             ))}
           </div>
+          {savedResults.length > 3 && (
+            <p className="text-center text-[11px] text-white/30">
+              Mostrando 3 más recientes de {savedResults.length}
+            </p>
+          )}
         </section>
       )}
 
+      {/* Campañas */}
       {campaigns.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-purple-300">📷 Campañas Foto a Campaña</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <h3 className="text-[15px] font-black text-white/90">Campañas Foto a Campaña</h3>
+            <p className="text-[12px] text-white/40">Toca una para abrir los 5 anuncios</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.map((row) => (
               <CampaignHistoryCard key={row.id} row={row} onLoad={onLoadCampaign} onDelete={onDeleteCampaign} />
             ))}
@@ -1141,10 +1183,14 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
         </section>
       )}
 
+      {/* Análisis de Panda Score */}
       {history.length > 0 && (
         <section className="space-y-3">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-300">🎯 Análisis de Panda Score</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div>
+            <h3 className="text-[15px] font-black text-white/90">Análisis de Panda Score</h3>
+            <p className="text-[12px] text-white/40">Toca un análisis para abrir el resultado completo</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {history.map((row) => (
               <HistoryCard key={row.id} row={row} onLoad={onLoad} onDelete={onDelete} />
             ))}
@@ -1410,7 +1456,7 @@ function MainApp({ session }) {
         </div>
       </header>
 
-      <div className="relative mx-auto grid max-w-7xl gap-4 p-3 sm:gap-5 sm:p-4 md:p-6 lg:grid-cols-[260px_1fr]">
+      <div className="relative mx-auto grid w-full max-w-7xl gap-4 overflow-x-hidden p-4 pb-32 sm:gap-5 md:p-6 md:pb-12 lg:grid-cols-[260px_1fr] lg:overflow-visible">
 
         {/* ── Sidebar — DESKTOP ONLY ── */}
         <aside className="hidden self-start rounded-[32px] border border-white/10 bg-white/[0.04] shadow-2xl backdrop-blur-xl lg:block lg:sticky lg:top-6">
