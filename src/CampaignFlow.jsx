@@ -239,13 +239,33 @@ const initialCampaignData = () => ({
   adAngles: [],
 });
 
-export function CampaignFlow({ onExit }) {
-  const [step, setStep]       = useState("photo"); // photo | analyzing | form | logo | generating | results
-  const [data, setData]       = useState(initialCampaignData);
+export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate }) {
+  const [step, setStep]       = useState(initialStep);
+  const [data, setData]       = useState(() => initialData ? { ...initialCampaignData(), ...initialData } : initialCampaignData());
   const [error, setError]     = useState(null);
+  const [savedId, setSavedId] = useState(initialData?.savedId || null);
 
-  const update = (patch) => setData((d) => ({ ...d, ...patch }));
-  const updateBrand = (patch) => setData((d) => ({ ...d, brand: { ...d.brand, ...patch } }));
+  const update = (patch) => setData((d) => {
+    const next = { ...d, ...patch };
+    // Si ya existe un savedId, propagamos cambios al backend (debounce simple en el padre)
+    if (savedId && onUpdate) onUpdate(savedId, next);
+    return next;
+  });
+  const updateBrand = (patch) => setData((d) => {
+    const next = { ...d, brand: { ...d.brand, ...patch } };
+    if (savedId && onUpdate) onUpdate(savedId, next);
+    return next;
+  });
+
+  // Auto-save la primera vez que entramos a "results" con ad angles generados
+  useEffect(() => {
+    if (step === "results" && data.adAngles?.length > 0 && !savedId && onSave) {
+      (async () => {
+        const id = await onSave(data);
+        if (id) setSavedId(id);
+      })();
+    }
+  }, [step, data.adAngles?.length]);
 
   return (
     <div className="space-y-5">
@@ -280,7 +300,7 @@ export function CampaignFlow({ onExit }) {
       {step === "photo"      && <PhotoStep      data={data} update={update} setStep={setStep} setError={setError} />}
       {step === "analyzing"  && <AnalyzingStep  data={data} update={update} setStep={setStep} setError={setError} />}
       {step === "form"       && <FormStep       data={data} update={update} setStep={setStep} />}
-      {step === "logo"       && <LogoStep       data={data} updateBrand={updateBrand} setStep={setStep} setError={setError} />}
+      {step === "logo"       && <LogoStep       data={data} update={update} updateBrand={updateBrand} setStep={setStep} setError={setError} />}
       {step === "generating" && <GeneratingStep data={data} update={update} setStep={setStep} setError={setError} />}
       {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} />}
     </div>
@@ -435,10 +455,17 @@ function FormStep({ data, update, setStep }) {
             coordinates: `${latitude.toFixed(4)},${longitude.toFixed(4)}`,
           },
         });
-        // Reverse geocoding: intentamos pedir al backend (si tiene Google Places),
-        // si no, dejamos las coordenadas y el usuario rellena ciudad manualmente
         try {
-          const res = await fetch(`${API_BASE}/api/reverse-geocode?lat=${latitude}&lng=${longitude}`);
+          const res = await fetch(`${API_BASE}/api/reverse-geocode`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lat: latitude,
+              lng: longitude,
+              niche: data.detectedNiche,
+              productName: data.productName,
+            }),
+          });
           if (res.ok) {
             const r = await res.json();
             if (r.success) {
@@ -459,6 +486,29 @@ function FormStep({ data, update, setStep }) {
       () => setAskingLocation(false),
       { timeout: 10000 }
     );
+  };
+
+  // Estimación de competencia sin GPS (usuario escribió ciudad a mano)
+  const estimateForCity = async () => {
+    if (!data.location.city || !data.detectedNiche) return;
+    setAskingLocation(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/reverse-geocode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat: 0, lng: 0,
+          city: data.location.city,
+          niche: data.detectedNiche,
+          productName: data.productName,
+        }),
+      });
+      if (res.ok) {
+        const r = await res.json();
+        if (r.success && r.competitors?.length) update({ competitors: r.competitors });
+      }
+    } catch (e) { /* ignore */ }
+    setAskingLocation(false);
   };
 
   return (
@@ -504,11 +554,18 @@ function FormStep({ data, update, setStep }) {
               Usaremos tu ubicación solo para estimar precios de competencia en tu área. Puedes editar o eliminar esta información antes de generar tus anuncios.
             </p>
           </div>
-          {!data.location.coordinates && (
-            <Btn variant="ghost" small onClick={requestLocation} disabled={askingLocation}>
-              {askingLocation ? "Detectando…" : "📍 Usar ubicación"}
-            </Btn>
-          )}
+          <div className="flex flex-shrink-0 gap-2">
+            {!data.location.coordinates && (
+              <Btn variant="ghost" small onClick={requestLocation} disabled={askingLocation}>
+                {askingLocation ? "…" : "📍 GPS"}
+              </Btn>
+            )}
+            {data.location.city && data.detectedNiche && (
+              <Btn variant="ghost" small onClick={estimateForCity} disabled={askingLocation}>
+                {askingLocation ? "…" : "🔍 Estimar competencia"}
+              </Btn>
+            )}
+          </div>
         </div>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -555,11 +612,14 @@ function FormStep({ data, update, setStep }) {
   );
 }
 
-// ───── PASO 4 — Subir logo ────────────────────────────────────────────────────
-function LogoStep({ data, updateBrand, setStep, setError }) {
+// ───── PASO 4 — Subir logo + formato ──────────────────────────────────────────
+function LogoStep({ data, update, updateBrand, setStep, setError }) {
   const fileRef = useRef(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [logoPreview, setLogoPreview] = useState(data.brand.logo || null);
+
+  const setFormat = (f) => update({ formats: [f] });
+  const currentFormat = data.formats?.[0] || "1080x1920";
 
   const handleLogo = async (file) => {
     if (!file?.type.startsWith("image/")) return;
@@ -647,6 +707,42 @@ function LogoStep({ data, updateBrand, setStep, setError }) {
               <p className="mt-1 text-[10px] text-white/40">Personalidad: {data.brand.brandPersonality || "—"}</p>
             </div>
           </div>
+        )}
+      </section>
+
+      {/* Formato del arte */}
+      <section className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+        <h3 className="text-lg font-black">Formato del arte</h3>
+        <p className="mt-1 text-xs text-white/40">Elige según dónde vas a publicar.</p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {[
+            { id: "1080x1080", label: "1080×1080", note: "Feed cuadrado" },
+            { id: "1080x1920", label: "1080×1920", note: "Stories / Reels" },
+            { id: "both",      label: "Ambos",     note: "1080×1080 + 1080×1920" },
+          ].map(({ id, label, note }) => {
+            const active = currentFormat === id;
+            return (
+              <button
+                key={id}
+                onClick={() => setFormat(id)}
+                className={`rounded-2xl border p-4 text-left transition ${
+                  active
+                    ? "border-purple-400/50 bg-gradient-to-br from-purple-500/15 to-pink-500/10"
+                    : "border-white/10 bg-white/[0.02] hover:border-white/25"
+                }`}
+              >
+                <p className="text-sm font-black">{label}</p>
+                <p className="mt-0.5 text-[11px] text-white/40">{note}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        {currentFormat === "both" && (
+          <p className="mt-3 text-[11px] text-white/35">
+            ⚠️ "Ambos" duplica el costo y tiempo de generación (10 imágenes en vez de 5).
+          </p>
         )}
       </section>
 
@@ -755,16 +851,30 @@ function GeneratingStep({ data, update, setStep, setError }) {
 
 // ───── PASO 6 — Resultados (5 artes) ──────────────────────────────────────────
 function ResultsStep({ data, update, onExit }) {
+  const updateAdAt = (i, patch) => {
+    const next = data.adAngles.slice();
+    next[i] = { ...next[i], ...patch };
+    update({ adAngles: next });
+  };
+
   return (
     <div className="space-y-5">
       <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
         <h2 className="text-2xl font-black sm:text-3xl">Tus 5 anuncios listos</h2>
-        <p className="mt-2 text-sm text-white/55">Cada arte tiene un ángulo estratégico distinto. Descarga, edita o regenera cualquiera.</p>
+        <p className="mt-2 text-sm text-white/55">Cada arte tiene un ángulo estratégico distinto. Edita el texto, regenera o descarga.</p>
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.adAngles.map((ad, i) => (
-          <AdCard key={i} ad={ad} index={i} />
+          <AdCard
+            key={i}
+            ad={ad}
+            index={i}
+            sourcePhoto={data.uploadedImage}
+            brand={data.brand}
+            format={data.formats?.[0] || "1080x1920"}
+            onUpdate={(patch) => updateAdAt(i, patch)}
+          />
         ))}
       </div>
 
@@ -773,44 +883,146 @@ function ResultsStep({ data, update, onExit }) {
   );
 }
 
-function AdCard({ ad, index }) {
+function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate }) {
+  const [editing, setEditing]       = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [regenerating, setRegen]    = useState(false);
+  const [regenError, setRegenError] = useState(null);
+
+  // Buffers de edición — se sincronizan con `ad` cuando cambia (nueva regeneración)
+  const [draft, setDraft] = useState({ headline: ad.headline, subheadline: ad.subheadline, cta: ad.cta });
+  useEffect(() => { setDraft({ headline: ad.headline, subheadline: ad.subheadline, cta: ad.cta }); }, [ad.headline, ad.subheadline, ad.cta]);
+
   const handleDownload = () => {
     if (!ad.generatedImage) return;
     const a = document.createElement("a");
-    a.href = ad.generatedImage;
+    a.href     = ad.generatedImage;
     a.download = `panda-${(ad.angleName || "ad").toLowerCase().replace(/\s+/g, "-")}-${index + 1}.png`;
     a.click();
   };
+
   const handleCopyPrompt = async () => {
+    try { await navigator.clipboard.writeText(ad.generationPrompt || ""); } catch (e) { /* ignore */ }
+  };
+
+  const handleSaveEdits = () => {
+    onUpdate(draft);
+    setEditing(false);
+  };
+
+  const handleRegenerate = async () => {
+    setRegen(true); setRegenError(null);
+    // Si estaba editando, aplicamos los drafts antes de regenerar
+    const angleForGen = editing
+      ? { ...ad, ...draft }
+      : ad;
+    if (editing) onUpdate(draft);
+
     try {
-      await navigator.clipboard.writeText(ad.generationPrompt || "");
-    } catch (e) { /* ignore */ }
+      const res = await fetch(`${API_BASE}/api/regenerate-ad`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ angle: angleForGen, brand, sourcePhoto, format }),
+      });
+      const r = await res.json();
+      if (!res.ok || !r.success) throw new Error(r.error || "Error al regenerar");
+      onUpdate({ generatedImage: r.image, ...(editing ? draft : {}) });
+      setEditing(false);
+    } catch (err) {
+      setRegenError(err.message);
+    } finally {
+      setRegen(false);
+    }
   };
 
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-3 backdrop-blur-xl sm:rounded-[28px] sm:p-4">
+
+      {/* IMAGEN */}
       {ad.generatedImage ? (
-        <img src={ad.generatedImage} alt={ad.angleName} className="aspect-square w-full rounded-xl object-cover" />
+        <div className="relative">
+          <img src={ad.generatedImage} alt={ad.angleName} className="w-full rounded-xl object-contain" />
+          {regenerating && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/65 backdrop-blur-sm">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-transparent border-t-purple-400" />
+                <p className="text-[10px] font-black text-white/70">Regenerando…</p>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
-        <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] text-white/30 text-xs">
-          Sin imagen
+        <div className="flex aspect-square w-full items-center justify-center rounded-xl border border-dashed border-white/10 bg-white/[0.02] text-xs text-white/30">
+          {regenerating ? "Generando…" : "Sin imagen"}
         </div>
       )}
-      <div className="mt-3">
-        <p className="text-[10px] font-black uppercase tracking-widest text-purple-300">{ad.angleName || `Ángulo ${index + 1}`}</p>
-        <p className="mt-1 text-sm font-black leading-tight text-white">{ad.headline || "—"}</p>
-        {ad.subheadline && <p className="mt-1 text-xs text-white/55">{ad.subheadline}</p>}
-        {ad.cta && (
-          <div className="mt-3 inline-block rounded-full bg-gradient-to-r from-pink-500 to-purple-500 px-3 py-1 text-[10px] font-black text-white">
-            {ad.cta}
-          </div>
+
+      {/* TEXTOS — modo lectura */}
+      {!editing && (
+        <div className="mt-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-purple-300">{ad.angleName || `Ángulo ${index + 1}`}</p>
+          <p className="mt-1 text-sm font-black leading-tight text-white">{ad.headline || "—"}</p>
+          {ad.subheadline && <p className="mt-1 text-xs text-white/55">{ad.subheadline}</p>}
+          {ad.cta && (
+            <div className="mt-3 inline-block rounded-full bg-gradient-to-r from-pink-500 to-purple-500 px-3 py-1 text-[10px] font-black text-white">
+              {ad.cta}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TEXTOS — modo edición */}
+      {editing && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-widest text-purple-300">{ad.angleName || `Ángulo ${index + 1}`}</p>
+          <input
+            value={draft.headline ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, headline: e.target.value }))}
+            placeholder="Headline"
+            className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-black text-white outline-none focus:border-purple-400/60"
+          />
+          <input
+            value={draft.subheadline ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, subheadline: e.target.value }))}
+            placeholder="Subheadline / beneficio"
+            className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/85 outline-none focus:border-purple-400/60"
+          />
+          <input
+            value={draft.cta ?? ""}
+            onChange={(e) => setDraft((d) => ({ ...d, cta: e.target.value }))}
+            placeholder="CTA"
+            className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-purple-400/60"
+          />
+          <p className="text-[10px] text-white/30">Los cambios solo aparecen en la imagen al regenerar.</p>
+        </div>
+      )}
+
+      {regenError && (
+        <p className="mt-2 rounded-lg border border-red-400/30 bg-red-400/10 px-2.5 py-1.5 text-[10px] text-red-300">⚠️ {regenError}</p>
+      )}
+
+      {/* ACCIONES */}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {!editing ? (
+          <>
+            <Btn variant="ghost" small onClick={handleDownload} disabled={!ad.generatedImage || regenerating}>⬇ Descargar</Btn>
+            <Btn variant="ghost" small onClick={() => setEditing(true)} disabled={regenerating}>✏️ Editar texto</Btn>
+            <Btn variant="ghost" small onClick={handleRegenerate} disabled={regenerating}>🔄 Regenerar</Btn>
+            <Btn variant="ghost" small onClick={handleCopyPrompt} disabled={!ad.generationPrompt}>📋 Copiar prompt</Btn>
+          </>
+        ) : (
+          <>
+            <Btn variant="ghost" small onClick={() => { setDraft({ headline: ad.headline, subheadline: ad.subheadline, cta: ad.cta }); setEditing(false); }}>✕ Cancelar</Btn>
+            <Btn small onClick={handleSaveEdits}>✓ Guardar texto</Btn>
+            <div className="col-span-2">
+              <Btn variant="premium" small full onClick={handleRegenerate} disabled={regenerating}>
+                {regenerating ? "Regenerando…" : "🔄 Regenerar con estos textos"}
+              </Btn>
+            </div>
+          </>
         )}
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <Btn variant="ghost" small onClick={handleDownload} disabled={!ad.generatedImage}>⬇ Descargar</Btn>
-        <Btn variant="ghost" small onClick={handleCopyPrompt} disabled={!ad.generationPrompt}>📋 Copiar prompt</Btn>
-      </div>
+
       {showPrompt && ad.generationPrompt && (
         <p className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-black/30 p-2 text-[10px] text-white/40">{ad.generationPrompt}</p>
       )}

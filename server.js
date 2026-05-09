@@ -739,6 +739,143 @@ The product from the source photo MUST be the visual hero of the composition.`;
   }
 });
 
+// 4) Reverse geocode + estimación de competencia (sin Google Places, gratis)
+//    - OpenStreetMap Nominatim para ciudad/región/país (rate limit: 1 req/s)
+//    - Claude para estimar 3-5 competidores plausibles con rangos de precio
+app.post("/api/reverse-geocode", async (req, res) => {
+  try {
+    const { lat, lng, niche, productName, city: cityHint } = req.body || {};
+    if (!lat || !lng) return res.status(400).json({ error: "Faltan coordenadas." });
+
+    // Nominatim — reverse geocoding gratis
+    let city = "", region = "", country = "";
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=es`;
+      const r = await fetch(url, { headers: { "User-Agent": "PandaProof/1.0 (panda-proof.onrender.com)" } });
+      if (r.ok) {
+        const j  = await r.json();
+        const ad = j.address || {};
+        city    = ad.city || ad.town || ad.village || ad.municipality || "";
+        region  = ad.state || ad.region || "";
+        country = ad.country || "";
+      }
+    } catch (e) {
+      console.warn("Nominatim falló:", e.message);
+    }
+
+    const finalCity = cityHint || city;
+
+    // Claude — estima competencia local + rango de precios para el nicho
+    let competitors = [];
+    if (finalCity && niche && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const message = await client.messages.create({
+          model:      "claude-haiku-4-5",
+          max_tokens: 700,
+          messages: [{
+            role: "user",
+            content: `Estás analizando competencia local para una campaña publicitaria.
+
+UBICACIÓN: ${finalCity}, ${region || country || ""}
+NICHO: ${niche}
+PRODUCTO/SERVICIO: ${productName || "general del nicho"}
+
+Estima 3-5 tipos de competidores típicos que existirían en esa ubicación + nicho, con rangos de precio realistas en moneda local. NO inventes nombres específicos de negocios — usa categorías o arquetipos (ej: "Spa boutique premium del centro", "Cadena nacional", "Profesional independiente a domicilio").
+
+Devuelve ÚNICAMENTE este JSON:
+{
+  "competitors": [
+    { "name": "<arquetipo o categoría>", "estimatedPriceRange": "<ej: $40-70 USD>", "source": "Estimación basada en mercado local" }
+  ]
+}
+
+Responde en español.`,
+          }],
+        });
+
+        const raw   = message.content[0].text;
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          if (Array.isArray(parsed.competitors)) competitors = parsed.competitors;
+        }
+      } catch (e) {
+        console.warn("Estimación de competencia falló:", e.message);
+      }
+    }
+
+    res.json({ success: true, city: finalCity, region, country, competitors });
+  } catch (err) {
+    console.error("❌ reverse-geocode:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5) Regenerar UN solo anuncio (cuando el usuario edita texto o pide nueva versión)
+app.post("/api/regenerate-ad", async (req, res) => {
+  try {
+    const { angle, brand, sourcePhoto, format } = req.body || {};
+    if (!angle?.generationPrompt) return res.status(400).json({ error: "Falta el prompt del ángulo." });
+    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY no configurada." });
+
+    const openai = getOpenAI();
+    const size   = format === "1080x1920" ? "1024x1536"
+                 : format === "1080x1080" ? "1024x1024"
+                 : "1024x1536";
+
+    let sourcePng = null;
+    if (sourcePhoto) {
+      try {
+        const b64 = sourcePhoto.includes(",") ? sourcePhoto.split(",")[1] : sourcePhoto;
+        sourcePng = await sharp(Buffer.from(b64, "base64")).ensureAlpha().png().toBuffer();
+      } catch (e) {
+        console.warn("⚠️  No se pudo procesar sourcePhoto:", e.message);
+      }
+    }
+
+    const brandColors = brand?.primaryColors?.join(", ") || "use confident brand accents";
+    const visualStyle = brand?.visualStyle || "modern, premium";
+
+    // Si el usuario editó headline/subheadline/cta, los inyectamos en el prompt
+    const overrides = [];
+    if (angle.headline)    overrides.push(`Main headline: "${angle.headline}"`);
+    if (angle.subheadline) overrides.push(`Sub-headline: "${angle.subheadline}"`);
+    if (angle.cta)         overrides.push(`CTA button text: "${angle.cta}"`);
+
+    const fullPrompt = `${angle.generationPrompt}
+
+${overrides.length ? `IMPORTANT — use these EXACT texts (do not rewrite):\n${overrides.join("\n")}` : ""}
+
+Brand color palette: ${brandColors}.
+Visual style: ${visualStyle}.
+Logo placement: top corner, small but visible.
+CTA: clearly visible, high contrast.
+Typography: clean, mobile-readable.
+The product from the source photo MUST be the visual hero of the composition.`;
+
+    const response = sourcePng
+      ? await openai.images.edit({
+          model:   "gpt-image-2",
+          image:   await toFile(sourcePng, "source.png", { type: "image/png" }),
+          prompt:  fullPrompt.slice(0, 3900),
+          size,
+          quality: "medium",
+        })
+      : await openai.images.generate({
+          model:   "gpt-image-2",
+          prompt:  fullPrompt.slice(0, 3900),
+          size,
+          quality: "medium",
+        });
+
+    const b64 = response.data[0].b64_json;
+    res.json({ success: true, image: `data:image/png;base64,${b64}` });
+  } catch (err) {
+    console.error("❌ regenerate-ad:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🐼 Panda Proof API → http://localhost:${PORT}`);

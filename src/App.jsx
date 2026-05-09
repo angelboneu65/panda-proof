@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   supabase, supabaseEnabled, getSession, signOut,
   saveAnalysis, listAnalyses, deleteAnalysis, rowToAnalysis,
+  saveCampaign, updateCampaign, listCampaigns, getCampaign, deleteCampaign,
 } from "./supabase";
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
@@ -1045,39 +1046,93 @@ function HistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
-function HistoryView({ history, onLoad, onDelete, onReset }) {
-  if (history.length === 0) {
+function CampaignHistoryCard({ row, onLoad, onDelete }) {
+  const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-purple-400/15 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-4 transition hover:border-purple-400/35">
+      <button
+        onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar esta campaña?")) onDelete(row.id); }}
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/40 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+      >✕</button>
+
+      <div onClick={() => onLoad(row.id)} className="cursor-pointer">
+        <div className="flex items-start gap-3">
+          {row.thumbnail ? (
+            <img src={row.thumbnail} alt="" className="h-14 w-14 flex-shrink-0 rounded-2xl object-cover ring-1 ring-white/10" />
+          ) : (
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-2xl shadow-lg">📷</div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-full border border-purple-300/30 bg-purple-300/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest text-purple-200">Campaña</span>
+            </div>
+            <p className="mt-1 truncate text-sm font-bold text-white/85">{row.product_name || "Sin nombre"}</p>
+            <p className="truncate text-xs text-white/45">{row.niche || "—"}{row.city ? ` · ${row.city}` : ""}</p>
+            <p className="mt-1 text-[10px] text-white/30">{date}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryView({ history, campaigns, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onReset }) {
+  const totalCount = history.length + campaigns.length;
+
+  if (totalCount === 0) {
     return (
       <div className="space-y-5">
         <div>
           <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
-          <p className="mt-1 text-sm text-white/40">Aquí aparecerán todos tus análisis guardados.</p>
+          <p className="mt-1 text-sm text-white/40">Aquí aparecerán todos tus análisis y campañas guardadas.</p>
         </div>
         <div className="rounded-[32px] border border-dashed border-white/10 bg-white/[0.02] p-12 text-center">
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-3xl">📊</div>
-          <p className="text-lg font-black text-white">Aún no has guardado ningún análisis</p>
-          <p className="mt-2 max-w-md mx-auto text-sm text-white/40">Cada Panda Score que generes se guardará automáticamente aquí. Podrás revisarlo después y comparar resultados.</p>
+          <p className="text-lg font-black text-white">Aún no has guardado nada</p>
+          <p className="mt-2 max-w-md mx-auto text-sm text-white/40">Cada Panda Score y cada campaña que generes se guarda automáticamente aquí.</p>
           <div className="mt-6 inline-block">
-            <Btn onClick={onReset}>🐼 Hacer mi primer análisis</Btn>
+            <Btn onClick={onReset}>🐼 Empezar</Btn>
           </div>
         </div>
       </div>
     );
   }
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-7">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
-          <p className="mt-1 text-sm text-white/40">{history.length} {history.length === 1 ? "análisis guardado" : "análisis guardados"}</p>
+          <p className="mt-1 text-sm text-white/40">
+            {history.length} {history.length === 1 ? "análisis" : "análisis"}
+            {" · "}
+            {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"}
+          </p>
         </div>
         <Btn onClick={onReset} small>+ Nuevo</Btn>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {history.map((row) => (
-          <HistoryCard key={row.id} row={row} onLoad={onLoad} onDelete={onDelete} />
-        ))}
-      </div>
+
+      {campaigns.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-purple-300">📷 Campañas Foto a Campaña</h3>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {campaigns.map((row) => (
+              <CampaignHistoryCard key={row.id} row={row} onLoad={onLoadCampaign} onDelete={onDeleteCampaign} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {history.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-cyan-300">🎯 Análisis de Panda Score</h3>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {history.map((row) => (
+              <HistoryCard key={row.id} row={row} onLoad={onLoad} onDelete={onDelete} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -1123,15 +1178,18 @@ function MainApp({ session }) {
   const [formData,  setFormData]  = useState(null);
   const [error,     setError]     = useState(null);
   const [history,   setHistory]   = useState([]);
+  const [campaignHistory, setCampaignHistory] = useState([]);
+  const [loadedCampaign,  setLoadedCampaign]  = useState(null); // datos cargados desde historial
 
   const userName = session?.user?.user_metadata?.name
     || session?.user?.email?.split("@")[0]
     || "Tú";
 
-  // Load history on mount
+  // Load history (analyses + campaigns) on mount
   useEffect(() => {
     if (!supabaseEnabled || !session) return;
     listAnalyses().then(setHistory);
+    listCampaigns().then(setCampaignHistory);
   }, [session?.user?.id]);
 
   const refreshHistory = useCallback(async () => {
@@ -1139,6 +1197,38 @@ function MainApp({ session }) {
     const rows = await listAnalyses();
     setHistory(rows);
   }, [session?.user?.id]);
+
+  const refreshCampaigns = useCallback(async () => {
+    if (!supabaseEnabled || !session) return;
+    const rows = await listCampaigns();
+    setCampaignHistory(rows);
+  }, [session?.user?.id]);
+
+  // Callbacks para CampaignFlow
+  const handleSaveCampaign = async (data) => {
+    if (!supabaseEnabled || !session) return null;
+    const row = await saveCampaign(data);
+    if (row) refreshCampaigns();
+    return row?.id || null;
+  };
+
+  const handleUpdateCampaign = async (id, data) => {
+    if (!supabaseEnabled || !session) return;
+    await updateCampaign(id, data);
+    refreshCampaigns();
+  };
+
+  const handleLoadCampaign = async (rowId) => {
+    const full = await getCampaign(rowId);
+    if (!full) return;
+    setLoadedCampaign({ ...full.data, savedId: full.id });
+    setView("campaign");
+  };
+
+  const handleDeleteCampaign = async (id) => {
+    await deleteCampaign(id);
+    setCampaignHistory((h) => h.filter((r) => r.id !== id));
+  };
 
   const handleAnalyze = async (file, form) => {
     setImageFile(file);
@@ -1204,9 +1294,9 @@ function MainApp({ session }) {
   };
 
   // "Crear" tab → vuelve al chooser. "Analizar diseño" → flujo actual de upload.
-  const goToCreate = () => setView("create");
+  const goToCreate = () => { setLoadedCampaign(null); setView("create"); };
   const startAnalyzeFlow = () => setView("upload");
-  const startCampaignFlow = () => setView("campaign");
+  const startCampaignFlow = () => { setLoadedCampaign(null); setView("campaign"); };
 
   // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign)?
   const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign";
@@ -1271,9 +1361,9 @@ function MainApp({ session }) {
               className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "history" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
             >
               <span>🗂️</span> Mis análisis
-              {history.length > 0 && (
+              {(history.length + campaignHistory.length) > 0 && (
                 <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
-                  {history.length}
+                  {history.length + campaignHistory.length}
                 </span>
               )}
             </button>
@@ -1315,9 +1405,9 @@ function MainApp({ session }) {
                   className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "history" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
                 >
                   <span className="flex items-center gap-3"><span>🗂️</span> Mis análisis</span>
-                  {history.length > 0 && (
+                  {(history.length + campaignHistory.length) > 0 && (
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
-                      {history.length}
+                      {history.length + campaignHistory.length}
                     </span>
                   )}
                 </div>
@@ -1381,7 +1471,15 @@ function MainApp({ session }) {
           {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} />}
           {view === "upload"    && <UploadView onAnalyze={handleAnalyze} globalError={null} />}
           {view === "analyzing" && <AnalyzingView />}
-          {view === "campaign"  && <CampaignFlow onExit={goToCreate} />}
+          {view === "campaign"  && (
+            <CampaignFlow
+              onExit={goToCreate}
+              initialData={loadedCampaign}
+              initialStep={loadedCampaign ? "results" : "photo"}
+              onSave={handleSaveCampaign}
+              onUpdate={handleUpdateCampaign}
+            />
+          )}
           {view === "results"   && analysis && (
             <ResultsView
               analysis={analysis}
@@ -1394,8 +1492,11 @@ function MainApp({ session }) {
           {view === "history" && (
             <HistoryView
               history={history}
+              campaigns={campaignHistory}
               onLoad={handleLoadHistory}
               onDelete={handleDelete}
+              onLoadCampaign={handleLoadCampaign}
+              onDeleteCampaign={handleDeleteCampaign}
               onReset={handleReset}
             />
           )}

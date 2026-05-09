@@ -52,6 +52,46 @@ create policy "Users can delete their own analyses" on public.analyses
   for delete using (auth.uid() = user_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Tabla de campañas Foto a Campaña
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.campaigns (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid references auth.users(id) on delete cascade not null,
+  created_at    timestamp with time zone default now() not null,
+  updated_at    timestamp with time zone default now() not null,
+
+  -- Display fields (top-level para queries rápidas)
+  product_name  text not null,
+  niche         text,
+  city          text,
+  thumbnail     text, -- base64 o URL de la primera imagen generada (para preview)
+
+  -- Estructura completa: foto subida, contexto, brand, adAngles, etc.
+  data          jsonb not null
+);
+
+create index if not exists campaigns_user_created_idx
+  on public.campaigns(user_id, created_at desc);
+
+alter table public.campaigns enable row level security;
+
+drop policy if exists "Users can view their own campaigns" on public.campaigns;
+create policy "Users can view their own campaigns" on public.campaigns
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own campaigns" on public.campaigns;
+create policy "Users can insert their own campaigns" on public.campaigns
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update their own campaigns" on public.campaigns;
+create policy "Users can update their own campaigns" on public.campaigns
+  for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own campaigns" on public.campaigns;
+create policy "Users can delete their own campaigns" on public.campaigns
+  for delete using (auth.uid() = user_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- INSTRUCCIONES DE SETUP:
 -- 1. Ve a https://supabase.com y crea un proyecto nuevo
 -- 2. SQL Editor → pega este archivo → Run

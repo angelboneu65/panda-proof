@@ -94,6 +94,86 @@ export async function deleteAnalysis(id) {
   if (error) console.error("deleteAnalysis:", error.message);
 }
 
+// ── Campaigns (Foto a Campaña) ────────────────────────────────────────────────
+export async function saveCampaign(data) {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Thumbnail: usamos la primera imagen generada (si existe) para preview
+  const thumb = data.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
+
+  const { data: row, error } = await supabase
+    .from("campaigns")
+    .insert({
+      user_id:      user.id,
+      product_name: data.productName || "Sin nombre",
+      niche:        data.detectedNiche || null,
+      city:         data.location?.city || null,
+      thumbnail:    thumb,
+      data,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveCampaign:", error.message);
+    return null;
+  }
+  return row;
+}
+
+export async function updateCampaign(id, data) {
+  if (!supabase) return null;
+  const thumb = data.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      product_name: data.productName || "Sin nombre",
+      niche:        data.detectedNiche || null,
+      city:         data.location?.city || null,
+      thumbnail:    thumb,
+      data,
+      updated_at:   new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) console.error("updateCampaign:", error.message);
+}
+
+export async function listCampaigns() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("id, created_at, product_name, niche, city, thumbnail")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) {
+    console.error("listCampaigns:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function getCampaign(id) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) {
+    console.error("getCampaign:", error.message);
+    return null;
+  }
+  return data;
+}
+
+export async function deleteCampaign(id) {
+  if (!supabase) return;
+  const { error } = await supabase.from("campaigns").delete().eq("id", id);
+  if (error) console.error("deleteCampaign:", error.message);
+}
+
 // Convert DB row → app analysis shape
 export function rowToAnalysis(row) {
   return {
