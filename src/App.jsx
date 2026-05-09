@@ -3,6 +3,7 @@ import {
   supabase, supabaseEnabled, getSession, signOut,
   saveAnalysis, listAnalyses, deleteAnalysis, rowToAnalysis,
   saveCampaign, updateCampaign, listCampaigns, getCampaign, deleteCampaign,
+  saveResult, listResults, deleteResult,
 } from "./supabase";
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
@@ -580,7 +581,7 @@ function AnalyzingView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // RESULTS VIEW
 // ══════════════════════════════════════════════════════════════════════════════
-function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
+function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
   // Destructure FIRST so all variables are available to hooks below
   const {
     pandaScore            = 0,
@@ -597,6 +598,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     regenerationPriorities = [],
     regenerationPrompt    = "",
   } = analysis;
+  const analysisId = analysis.id || null;
 
   const [generating,     setGenerating]     = useState(false);
   const [generatedImage, setGeneratedImage] = useState(null);
@@ -607,11 +609,18 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
   const [genScore,       setGenScore]       = useState(null);
   const [genShortLabel,  setGenShortLabel]  = useState(null);
   const [customPrompt,   setCustomPrompt]   = useState(regenerationPrompt || "");
+  const [showDetails,    setShowDetails]    = useState(false);
+  const [showCreateAnother, setShowCreateAnother] = useState(false);
+  const [savedId,        setSavedId]        = useState(null);
+  const [copiedPrompt,   setCopiedPrompt]   = useState(false);
 
   // Re-populate textarea if a different analysis is loaded (e.g. from history)
   useEffect(() => {
     setCustomPrompt(regenerationPrompt || "");
   }, [regenerationPrompt]);
+
+  // Reset save state when a new image is generated
+  useEffect(() => { setSavedId(null); }, [generatedImage]);
 
   const genSteps = [
     "Preservando concepto e identidad del arte…",
@@ -691,118 +700,223 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
     }
   };
 
-  const handleDownload = () => {
-    const a = document.createElement("a");
-    a.href     = generatedImage;
-    a.download = "arte-optimizado-pandaproof.png";
-    a.click();
+  const handleSaveResult = async () => {
+    if (savedId || !generatedImage || !onSaveResult) return;
+    const id = await onSaveResult({
+      imageUrl:          generatedImage,
+      type:              "optimized",
+      title:             formData?.producto || analysis.contextUsed?.whatIsBeingSold || "Arte optimizado",
+      prompt:            customPrompt || regenerationPrompt || "",
+      sourceFlow:        "analysis_result",
+      relatedAnalysisId: analysisId,
+    });
+    if (id) setSavedId(id);
   };
 
-  const [canvaInfo, setCanvaInfo] = useState(null);
-
-  const handleEditInCanva = async () => {
-    setCanvaInfo(null);
+  const handleCopyPrompt = async () => {
     try {
-      // Convertir base64 → File (para Web Share API)
-      const res  = await fetch(generatedImage);
-      const blob = await res.blob();
-      const file = new File([blob], "arte-pandaproof.png", { type: "image/png" });
+      await navigator.clipboard.writeText(customPrompt || regenerationPrompt || "");
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 2000);
+    } catch (e) { /* ignore */ }
+  };
 
-      // 📱 iPhone/Android: abrir share sheet nativo → Canva, Instagram, WhatsApp, etc.
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: "Arte optimizado — Panda Proof",
-          text:  "Editar en Canva",
-        });
-        setCanvaInfo("✅ Selecciona Canva en el menú para abrir y editar.");
-        return;
-      }
-
-      // 💻 Desktop fallback: clipboard + abrir Canva web
-      if (navigator.clipboard && window.ClipboardItem) {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        window.open("https://www.canva.com/design?create&type=TADQ4DStcps", "_blank", "noopener");
-        setCanvaInfo("✅ Imagen copiada. Pega con Ctrl+V (Cmd+V) en Canva.");
-        return;
-      }
-
-      // 🆘 Último recurso: descarga + abre Canva
-      handleDownload();
-      window.open("https://www.canva.com/", "_blank", "noopener");
-      setCanvaInfo("⬇️ Imagen descargada. Súbela manualmente en Canva.");
-    } catch (err) {
-      // El usuario canceló el share sheet → no es un error real
-      if (err.name === "AbortError") return;
-      console.error("Editar en Canva:", err);
-      handleDownload();
-      setCanvaInfo("⬇️ Imagen descargada. Ábrela en Canva manualmente.");
-    }
+  // Reset state when starting a new generation
+  const handleStartGeneration = () => {
+    setShowCreateAnother(false);
+    handleGenerate();
   };
 
   return (
     <div className="space-y-5">
 
-      {/* ── Header ── */}
-      <section className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between sm:rounded-[32px] sm:p-6">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
-              {shortLabel}
+      {/* 1. Header — sin botones de acción */}
+      <section className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
+            {shortLabel}
+          </span>
+          {profileApplied && (
+            <span className="inline-block rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-[10px] font-black text-purple-300">
+              {profileApplied}
             </span>
-            {profileApplied && (
-              <span className="inline-block rounded-full border border-purple-400/20 bg-purple-400/10 px-3 py-1 text-[10px] font-black text-purple-300">
-                {profileApplied}
-              </span>
-            )}
-            {platformDetected && (
-              <span className="inline-block rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-white/40">
-                📱 {platformDetected}
-              </span>
-            )}
-          </div>
-          <h2 className="mt-2 text-2xl font-black sm:text-3xl">Análisis completado</h2>
-          {scoreLabel && (
-            <p className="mt-1 text-sm text-white/40">{scoreLabel}</p>
+          )}
+          {platformDetected && (
+            <span className="inline-block rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold text-white/40">
+              📱 {platformDetected}
+            </span>
           )}
         </div>
-        <Btn variant="ghost" onClick={onReset} small>← Nuevo análisis</Btn>
+        <h2 className="mt-2 text-2xl font-black sm:text-3xl">Análisis completado</h2>
+        {scoreLabel && <p className="mt-1 text-sm text-white/40">{scoreLabel}</p>}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[300px_1fr]">
+      {/* 2. Score circle + acción recomendada */}
+      <section className="flex flex-col items-center gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-5 text-center backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+        <ScoreCircle score={pandaScore} />
+        {scoreInterpretation && (
+          <p className="max-w-md text-sm leading-relaxed text-white/55">{scoreInterpretation}</p>
+        )}
+        <div className={`w-full max-w-md rounded-2xl py-2.5 text-sm font-black text-white ${meta.bg}`}>
+          {meta.icon} {accionRecomendada}
+        </div>
+      </section>
 
-        {/* ── LEFT col ── */}
-        <div className="space-y-5">
+      {/* 3. Imagen original */}
+      {preview && (
+        <section className="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl sm:rounded-[32px] sm:p-4">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-white/30">Arte original</p>
+          <img src={preview} alt="Arte original" className="mx-auto w-full max-w-2xl rounded-2xl object-contain" />
+          <div className="mt-3 text-center">
+            <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
+              Score: {pandaScore}/100
+            </span>
+          </div>
+        </section>
+      )}
 
-          {/* Score ring */}
-          <div className="flex flex-col items-center gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-5 text-center backdrop-blur-xl sm:rounded-[32px] sm:p-6">
-            <ScoreCircle score={pandaScore} />
-            {scoreInterpretation && (
-              <p className="text-xs leading-relaxed text-white/50 max-w-[220px]">{scoreInterpretation}</p>
-            )}
-            <div className={`w-full rounded-2xl py-2.5 text-sm font-black text-white ${meta.bg}`}>
-              {meta.icon} {accionRecomendada}
+      {/* 4a. Estado: SIN imagen optimizada todavía → CTA para generar */}
+      {!generatedImage && !generating && !genError && (
+        <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+          <div className="mb-5 flex flex-col items-center gap-3 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-400 text-3xl shadow-lg">🎨</div>
+            <div>
+              <p className="text-lg font-black">Arte optimizado en segundos</p>
+              <p className="mt-1 max-w-sm text-sm text-white/40">
+                El sistema preserva tu concepto, logo y persona principal — solo mejora lo que afecta la conversión.
+              </p>
             </div>
           </div>
 
-          {/* Arte original */}
-          {preview && (
-            <div className="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl sm:rounded-[32px] sm:p-4">
-              <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-white/30">Arte original</p>
-              <img src={preview} alt="Arte original" className="w-full rounded-2xl object-contain" />
-              <div className="mt-3 text-center">
-                <span className={`inline-block rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
-                  Score: {pandaScore}/100
-                </span>
-              </div>
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-black text-white/70">
+                Instrucciones adicionales <span className="font-bold text-white/30">opcional</span>
+              </label>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder="Ej: Mantén el diseño en horizontal, no cambies la modelo, agrega una etiqueta con el descuento…"
+                rows={3}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-cyan-400/60"
+              />
+              <p className="mt-1 text-[10px] text-white/30">Indica detalles específicos que quieras conservar o modificar.</p>
+            </div>
+            <Btn onClick={handleGenerate} full>🎨 Generar arte optimizado</Btn>
+          </div>
+        </section>
+      )}
+
+      {/* 4b. Estado: GENERANDO */}
+      {generating && (
+        <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+          <div className="flex flex-col items-center gap-6 py-12 text-center">
+            <RainbowLogo progress={genProgress} />
+            <span className="text-xs font-black tabular-nums text-white/60">{genProgress}%</span>
+            <div>
+              <p className="text-lg font-black text-white">Optimizando tu arte…</p>
+              <p className="mt-2 text-sm text-white/50 transition-all duration-700">{genSteps[genTick]}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 4c. Estado: ERROR */}
+      {genError && !generating && (
+        <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5 text-center">
+          <p className="text-sm font-bold text-red-300">⚠️ {genError}</p>
+          {genError.includes("OPENAI_API_KEY") && (
+            <p className="mt-2 text-xs text-white/40">
+              Agrega tu clave de OpenAI como <code className="text-cyan-300">OPENAI_API_KEY=sk-...</code> en las variables de entorno de Render.
+            </p>
+          )}
+          <div className="mt-4"><Btn onClick={handleGenerate}>Intentar de nuevo</Btn></div>
+        </section>
+      )}
+
+      {/* 5. Arte optimizado (cuando existe) */}
+      {generatedImage && !generating && (
+        <section className="overflow-hidden rounded-[24px] border border-purple-400/30 bg-white/[0.04] p-3 backdrop-blur-xl sm:rounded-[32px] sm:p-4">
+          <p className="mb-3 text-center text-[10px] font-black uppercase tracking-widest text-purple-300">✨ Arte optimizado</p>
+          <img src={generatedImage} alt="Arte optimizado" className="mx-auto w-full max-w-2xl rounded-2xl object-contain" />
+          <div className="mt-3 flex justify-center">
+            {genAnalyzing ? (
+              <span className="flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-400/15 px-3 py-1 text-xs font-black text-purple-300">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-transparent border-t-purple-300" />
+                Calculando nuevo score…
+              </span>
+            ) : genScore !== null ? (
+              <span className={`rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(genScore)}`}>
+                Score: {genScore}/100 — {genShortLabel}
+              </span>
+            ) : (
+              <span className="rounded-full border border-purple-400/30 bg-purple-400/15 px-3 py-1 text-xs font-black text-purple-300">
+                ✨ Optimizado con IA
+              </span>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* 6. ACCIONES DEL RESULTADO (solo cuando hay imagen optimizada) */}
+      {generatedImage && !generating && (
+        <section className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+          <h3 className="text-lg font-black sm:text-xl">Acciones del resultado</h3>
+          <p className="mt-1 text-xs text-white/40">Guarda tu arte optimizado o crea una nueva versión.</p>
+
+          {/* Primary button — Guardar */}
+          <div className="mt-5">
+            <Btn full onClick={handleSaveResult} disabled={!!savedId || !onSaveResult}>
+              {savedId ? "✓ Guardado en resultados" : "Guardar en resultados"}
+            </Btn>
+            {!onSaveResult && (
+              <p className="mt-2 text-center text-[10px] text-white/30">Inicia sesión para guardar tus resultados.</p>
+            )}
+          </div>
+
+          {/* Secondary row */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Btn variant="ghost" full onClick={handleCopyPrompt}>
+              {copiedPrompt ? "✓ Copiado" : "📋 Copiar prompt"}
+            </Btn>
+            <Btn variant="ghost" full onClick={() => setShowCreateAnother((v) => !v)}>
+              🔄 Crear otra versión
+            </Btn>
+          </div>
+
+          {/* Crear otra versión — inline editable */}
+          {showCreateAnother && (
+            <div className="mt-4 rounded-2xl border border-purple-400/20 bg-purple-400/5 p-4">
+              <label className="mb-1.5 block text-xs font-black text-white/70">
+                Comando para regenerar <span className="font-bold text-white/30">opcional</span>
+              </label>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                placeholder="Ej: Hazlo más vibrante, agranda el CTA, cambia el fondo a azul…"
+                rows={3}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-purple-400/60"
+              />
+              <p className="mb-3 mt-1 text-[10px] text-white/30">Dile a la IA qué corregir si quieres una variante distinta.</p>
+              <Btn full onClick={handleStartGeneration}>🎨 Generar nueva versión</Btn>
             </div>
           )}
-        </div>
 
-        {/* ── RIGHT col ── */}
+          {/* Tertiary — Ver detalles */}
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            className="mt-5 flex w-full items-center justify-center gap-2 text-xs font-black text-white/45 transition hover:text-white/80"
+          >
+            Ver detalles del análisis
+            <span className={`transition-transform ${showDetails ? "rotate-180" : ""}`}>▾</span>
+          </button>
+        </section>
+      )}
+
+      {/* 7. Detalles del análisis — visible siempre antes de generar, ocultable después */}
+      {(showDetails || !generatedImage) && (
         <div className="space-y-5">
-
-          {/* Problems + Recommendations */}
+          {/* Problemas + Recomendaciones */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-[24px] border border-red-400/15 bg-red-400/5 p-4 backdrop-blur-xl sm:rounded-[32px] sm:p-5">
               <h3 className="mb-3 text-sm font-black text-red-300 sm:mb-4">⚠️ Problemas detectados</h3>
@@ -826,7 +940,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             </div>
           </div>
 
-          {/* Panda Score — Desglose */}
+          {/* Panda Score Desglose */}
           <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div>
@@ -834,7 +948,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
                 <p className="mt-0.5 text-[10px] text-white/30">10 criterios evaluados, ponderados por objetivo</p>
               </div>
               {profileApplied && (
-                <span className="text-[10px] font-black text-white/20 text-right max-w-[120px] leading-snug">{profileApplied}</span>
+                <span className="max-w-[120px] text-right text-[10px] font-black leading-snug text-white/20">{profileApplied}</span>
               )}
             </div>
             <div className="space-y-3">
@@ -847,7 +961,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             </div>
           </div>
 
-          {/* Regeneration priorities (if present) */}
+          {/* Prioridades de regeneración */}
           {regenerationPriorities.length > 0 && (
             <div className="rounded-[20px] border border-purple-400/15 bg-purple-400/5 p-4 backdrop-blur-xl sm:rounded-[28px] sm:p-5">
               <h3 className="mb-3 text-sm font-black text-purple-300">🎯 Prioridades de regeneración</h3>
@@ -862,144 +976,7 @@ function ResultsView({ analysis, preview, imageFile, formData, onReset }) {
             </div>
           )}
         </div>
-      </div>
-
-      {/* ══ GENERADOR DE IMAGEN ══════════════════════════════════════════════════ */}
-      <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-4 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
-        <div className="mb-6 flex flex-col gap-4">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-purple-300/30 bg-purple-300/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-purple-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />
-              Color Panda Media Lab is working
-            </div>
-            <h3 className="text-xl font-black sm:text-2xl">Arte optimizado para vender</h3>
-            <p className="mt-1 text-sm text-white/45">
-              Aplica todas las correcciones detectadas conservando el concepto, logo y persona principal.
-            </p>
-          </div>
-
-          {/* Custom prompt textarea */}
-          {!generating && (
-            <div>
-              <div className="mb-1.5 flex items-center gap-2">
-                <label className="text-xs font-black text-white/70">
-                  {generatedImage ? "Comando para regenerar" : "Instrucciones adicionales"}
-                </label>
-                <span className="text-[10px] font-bold text-white/30">opcional</span>
-              </div>
-              <textarea
-                value={customPrompt}
-                onChange={(e) => setCustomPrompt(e.target.value)}
-                placeholder={generatedImage
-                  ? "Ej: Hazlo más vibrante, agranda el CTA, cambia el fondo a azul, vuelve a poner el logo abajo a la derecha…"
-                  : "Ej: Mantén el diseño en horizontal, no cambies la modelo, agrega una etiqueta con el descuento…"}
-                rows={3}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-white/25 outline-none transition focus:border-cyan-400/60 resize-none"
-              />
-              <p className="mt-1 text-[10px] text-white/30">
-                {generatedImage
-                  ? "Dile a la IA qué corregir si la versión anterior no quedó bien."
-                  : "Indica detalles específicos que quieras conservar o modificar."}
-              </p>
-            </div>
-          )}
-
-          {!generating && !generatedImage && (
-            <Btn onClick={handleGenerate} full>🎨 Generar arte optimizado</Btn>
-          )}
-          {!generating && generatedImage && (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Btn onClick={handleEditInCanva} full>✨ Editar en Canva</Btn>
-              <Btn onClick={handleDownload} variant="ghost" full>⬇️ Descargar</Btn>
-              <Btn onClick={handleGenerate} variant="ghost" full>🔄 Regenerar</Btn>
-            </div>
-          )}
-        </div>
-
-        {generating && (
-          <div className="flex flex-col items-center gap-6 py-12 text-center">
-            <RainbowLogo progress={genProgress} />
-            <span className="text-xs font-black tabular-nums text-white/60">{genProgress}%</span>
-            <div>
-              <p className="text-lg font-black text-white">Optimizando tu arte…</p>
-              <p className="mt-2 text-sm text-white/50 transition-all duration-700">{genSteps[genTick]}</p>
-            </div>
-          </div>
-        )}
-
-        {genError && !generating && (
-          <div className="rounded-2xl border border-red-400/30 bg-red-400/10 p-5 text-center">
-            <p className="text-sm font-bold text-red-300">⚠️ {genError}</p>
-            {genError.includes("OPENAI_API_KEY") && (
-              <p className="mt-2 text-xs text-white/40">
-                Agrega tu clave de OpenAI como <code className="text-cyan-300">OPENAI_API_KEY=sk-...</code> en las variables de entorno de Render.
-              </p>
-            )}
-            <div className="mt-4"><Btn onClick={handleGenerate}>Intentar de nuevo</Btn></div>
-          </div>
-        )}
-
-        {generatedImage && !generating && (
-          <div className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              {preview && (
-                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-black/20 p-3">
-                  <p className="mb-2 text-center text-[10px] font-black uppercase tracking-widest text-white/30">Original</p>
-                  <img src={preview} alt="Arte original" className="w-full rounded-xl object-contain" />
-                  <div className="mt-2 flex justify-center">
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(pandaScore)}`}>
-                      Score: {pandaScore}/100
-                    </span>
-                  </div>
-                </div>
-              )}
-              <div className="overflow-hidden rounded-[24px] border border-purple-400/30 bg-black/20 p-3">
-                <p className="mb-2 text-center text-[10px] font-black uppercase tracking-widest text-purple-300">✨ Arte optimizado</p>
-                <img src={generatedImage} alt="Arte optimizado" className="w-full rounded-xl object-contain" />
-                <div className="mt-2 flex justify-center">
-                  {genAnalyzing ? (
-                    <span className="flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-400/15 px-3 py-1 text-xs font-black text-purple-300">
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-transparent border-t-purple-300" />
-                      Calculando nuevo score…
-                    </span>
-                  ) : genScore !== null ? (
-                    <span className={`rounded-full border px-3 py-1 text-xs font-black ${scoreBadgeClass(genScore)}`}>
-                      Score: {genScore}/100 — {genShortLabel}
-                    </span>
-                  ) : (
-                    <span className="rounded-full border border-purple-400/30 bg-purple-400/15 px-3 py-1 text-xs font-black text-purple-300">
-                      ✨ Optimizado con IA
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Btn onClick={handleEditInCanva} full>✨ Editar en Canva</Btn>
-              <Btn onClick={handleDownload} variant="ghost" full>⬇️ Descargar</Btn>
-              <Btn variant="ghost" onClick={handleGenerate} full>🔄 Regenerar versión</Btn>
-            </div>
-
-            {canvaInfo && (
-              <div className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-center text-sm font-bold text-cyan-200">
-                {canvaInfo}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!generating && !generatedImage && !genError && (
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-white/15 py-12 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-400 text-3xl shadow-lg">🎨</div>
-            <div>
-              <p className="text-lg font-black">Arte optimizado en segundos</p>
-              <p className="mt-1 max-w-sm text-sm text-white/40">
-                El sistema preserva tu concepto, logo y persona principal — solo mejora lo que afecta la conversión.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }
@@ -1046,6 +1023,38 @@ function HistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
+function SavedResultCard({ row, onDelete }) {
+  const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
+  const handleDownload = () => {
+    if (!row.image_url) return;
+    const a = document.createElement("a");
+    a.href = row.image_url;
+    a.download = `panda-${(row.title || "arte").toLowerCase().replace(/\s+/g, "-")}.png`;
+    a.click();
+  };
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/20">
+      <button
+        onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este resultado?")) onDelete(row.id); }}
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/60 px-2 py-1 text-[10px] font-black text-white/40 opacity-0 transition group-hover:opacity-100 hover:bg-red-600/40 hover:text-red-200"
+      >✕</button>
+
+      {row.image_url && (
+        <img src={row.image_url} alt={row.title || "Arte"} className="aspect-square w-full rounded-xl object-cover" />
+      )}
+      <div className="mt-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">✨ Optimizado</p>
+        <p className="mt-1 truncate text-sm font-bold text-white/85">{row.title || "Arte optimizado"}</p>
+        <p className="mt-1 text-[10px] text-white/30">{date}</p>
+      </div>
+      <div className="mt-3">
+        <Btn variant="ghost" small full onClick={handleDownload} disabled={!row.image_url}>⬇ Descargar</Btn>
+      </div>
+    </div>
+  );
+}
+
 function CampaignHistoryCard({ row, onLoad, onDelete }) {
   const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
   return (
@@ -1076,8 +1085,8 @@ function CampaignHistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
-function HistoryView({ history, campaigns, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onReset }) {
-  const totalCount = history.length + campaigns.length;
+function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset }) {
+  const totalCount = history.length + campaigns.length + (savedResults?.length || 0);
 
   if (totalCount === 0) {
     return (
@@ -1104,13 +1113,22 @@ function HistoryView({ history, campaigns, onLoad, onDelete, onLoadCampaign, onD
         <div>
           <h2 className="text-2xl font-black sm:text-3xl">Mis análisis</h2>
           <p className="mt-1 text-sm text-white/40">
-            {history.length} {history.length === 1 ? "análisis" : "análisis"}
-            {" · "}
-            {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"}
+            {history.length} análisis · {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"} · {savedResults?.length || 0} resultados
           </p>
         </div>
         <Btn onClick={onReset} small>+ Nuevo</Btn>
       </div>
+
+      {savedResults?.length > 0 && (
+        <section className="space-y-3">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-300">✨ Resultados optimizados (últimos {savedResults.length})</h3>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {savedResults.map((row) => (
+              <SavedResultCard key={row.id} row={row} onDelete={onDeleteResult} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {campaigns.length > 0 && (
         <section className="space-y-3">
@@ -1180,17 +1198,38 @@ function MainApp({ session }) {
   const [history,   setHistory]   = useState([]);
   const [campaignHistory, setCampaignHistory] = useState([]);
   const [loadedCampaign,  setLoadedCampaign]  = useState(null); // datos cargados desde historial
+  const [savedResults,    setSavedResults]    = useState([]);   // últimos 20 resultados guardados
 
   const userName = session?.user?.user_metadata?.name
     || session?.user?.email?.split("@")[0]
     || "Tú";
 
-  // Load history (analyses + campaigns) on mount
+  // Load history (analyses + campaigns + saved results) on mount
   useEffect(() => {
     if (!supabaseEnabled || !session) return;
     listAnalyses().then(setHistory);
     listCampaigns().then(setCampaignHistory);
+    listResults().then(setSavedResults);
   }, [session?.user?.id]);
+
+  const refreshSavedResults = useCallback(async () => {
+    if (!supabaseEnabled || !session) return;
+    const rows = await listResults();
+    setSavedResults(rows);
+  }, [session?.user?.id]);
+
+  // Callbacks para ResultsView
+  const handleSaveResult = async (result) => {
+    if (!supabaseEnabled || !session) return null;
+    const row = await saveResult(result);
+    if (row) refreshSavedResults();
+    return row?.id || null;
+  };
+
+  const handleDeleteResult = async (id) => {
+    await deleteResult(id);
+    setSavedResults((r) => r.filter((row) => row.id !== id));
+  };
 
   const refreshHistory = useCallback(async () => {
     if (!supabaseEnabled || !session) return;
@@ -1361,9 +1400,9 @@ function MainApp({ session }) {
               className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "history" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
             >
               <span>🗂️</span> Mis análisis
-              {(history.length + campaignHistory.length) > 0 && (
+              {(history.length + campaignHistory.length + savedResults.length) > 0 && (
                 <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
-                  {history.length + campaignHistory.length}
+                  {history.length + campaignHistory.length + savedResults.length}
                 </span>
               )}
             </button>
@@ -1405,9 +1444,9 @@ function MainApp({ session }) {
                   className={`flex cursor-pointer items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "history" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
                 >
                   <span className="flex items-center gap-3"><span>🗂️</span> Mis análisis</span>
-                  {(history.length + campaignHistory.length) > 0 && (
+                  {(history.length + campaignHistory.length + savedResults.length) > 0 && (
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${view === "history" ? "bg-black/15 text-black" : "bg-white/10 text-white/50"}`}>
-                      {history.length + campaignHistory.length}
+                      {history.length + campaignHistory.length + savedResults.length}
                     </span>
                   )}
                 </div>
@@ -1486,17 +1525,19 @@ function MainApp({ session }) {
               preview={preview}
               imageFile={imageFile}
               formData={formData}
-              onReset={handleReset}
+              onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
             />
           )}
           {view === "history" && (
             <HistoryView
               history={history}
               campaigns={campaignHistory}
+              savedResults={savedResults}
               onLoad={handleLoadHistory}
               onDelete={handleDelete}
               onLoadCampaign={handleLoadCampaign}
               onDeleteCampaign={handleDeleteCampaign}
+              onDeleteResult={handleDeleteResult}
               onReset={handleReset}
             />
           )}

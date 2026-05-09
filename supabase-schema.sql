@@ -92,6 +92,44 @@ create policy "Users can delete their own campaigns" on public.campaigns
   for delete using (auth.uid() = user_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- Tabla de resultados guardados (galería de artes optimizados)
+-- Sólo retornamos los últimos 20 por usuario en la app.
+-- ═══════════════════════════════════════════════════════════════════════════
+create table if not exists public.saved_results (
+  id                  uuid primary key default gen_random_uuid(),
+  user_id             uuid references auth.users(id) on delete cascade not null,
+  created_at          timestamp with time zone default now() not null,
+
+  image_url           text not null, -- base64 o URL del arte
+  type                text not null default 'optimized',
+  title               text,
+  prompt              text,
+  source_flow         text, -- 'analysis_result' | 'campaign_ad' | etc.
+  related_analysis_id uuid references public.analyses(id) on delete set null
+);
+
+create index if not exists saved_results_user_created_idx
+  on public.saved_results(user_id, created_at desc);
+
+alter table public.saved_results enable row level security;
+
+drop policy if exists "Users can view their own results" on public.saved_results;
+create policy "Users can view their own results" on public.saved_results
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own results" on public.saved_results;
+create policy "Users can insert their own results" on public.saved_results
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update their own results" on public.saved_results;
+create policy "Users can update their own results" on public.saved_results
+  for update using (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own results" on public.saved_results;
+create policy "Users can delete their own results" on public.saved_results
+  for delete using (auth.uid() = user_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- INSTRUCCIONES DE SETUP:
 -- 1. Ve a https://supabase.com y crea un proyecto nuevo
 -- 2. SQL Editor → pega este archivo → Run

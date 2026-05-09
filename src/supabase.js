@@ -174,6 +174,53 @@ export async function deleteCampaign(id) {
   if (error) console.error("deleteCampaign:", error.message);
 }
 
+// ── Saved Results (galería de artes optimizados guardados) ──────────────────
+export async function saveResult(result) {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: row, error } = await supabase
+    .from("saved_results")
+    .insert({
+      user_id:             user.id,
+      image_url:           result.imageUrl,
+      type:                result.type || "optimized",
+      title:               result.title || null,
+      prompt:              result.prompt || null,
+      source_flow:         result.sourceFlow || null,
+      related_analysis_id: result.relatedAnalysisId || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveResult:", error.message);
+    return null;
+  }
+  return row;
+}
+
+export async function listResults() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("saved_results")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    console.error("listResults:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function deleteResult(id) {
+  if (!supabase) return;
+  const { error } = await supabase.from("saved_results").delete().eq("id", id);
+  if (error) console.error("deleteResult:", error.message);
+}
+
 // Convert DB row → app analysis shape
 export function rowToAnalysis(row) {
   return {
