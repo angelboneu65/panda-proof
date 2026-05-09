@@ -8,6 +8,7 @@ import {
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
 import { BRAND } from "./brand";
+import ChatBubble from "./ChatBubble";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1227,11 +1228,14 @@ export default function App() {
     );
   }
 
-  if (supabaseEnabled && !session) {
-    return <AuthView onSuccess={setSession} />;
-  }
-
-  return <MainApp session={session} />;
+  return (
+    <>
+      {supabaseEnabled && !session
+        ? <AuthView onSuccess={setSession} />
+        : <MainApp session={session} />}
+      <ChatBubble />
+    </>
+  );
 }
 
 // ── Main app shell (after auth) ───────────────────────────────────────────────
