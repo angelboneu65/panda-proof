@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Panda Proof</string>
+        <string>Panda AdLab</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -50,15 +50,15 @@
 
 	<!-- Permisos de privacidad (App Store los exige obligatoriamente) -->
 	<key>NSCameraUsageDescription</key>
-	<string>Panda Proof necesita acceso a tu cámara para tomar fotos del arte publicitario que quieres analizar.</string>
+	<string>Panda AdLab necesita acceso a tu cámara para tomar fotos del arte publicitario que quieres analizar.</string>
 
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Panda Proof necesita acceso a tus fotos para que puedas subir el arte que quieres analizar.</string>
+	<string>Panda AdLab necesita acceso a tus fotos para que puedas subir el arte que quieres analizar.</string>
 
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Panda Proof guardará el arte optimizado en tu galería de fotos.</string>
+	<string>Panda AdLab guardará el arte optimizado en tu galería de fotos.</string>
 
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Panda Proof no usa el micrófono. Esta entrada existe solo por requerimiento del sistema.</string>
+	<string>Panda AdLab no usa el micrófono. Esta entrada existe solo por requerimiento del sistema.</string>
 </dict>
 </plist>

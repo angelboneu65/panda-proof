@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.colorpandamedia.pandaproof',
-  appName: 'Panda Proof',
+  appName: 'Panda AdLab',
   webDir: 'dist',
   bundledWebRuntime: false,
 

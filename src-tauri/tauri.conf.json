@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Panda Proof",
+  "productName": "Panda AdLab",
   "version": "0.1.0",
   "identifier": "com.colorpandamedia.pandaproof",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Panda Proof",
+        "title": "Panda AdLab",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { signIn, signUp } from "./supabase";
+import { BRAND } from "./brand";
 
 export default function AuthView({ onSuccess }) {
   const [mode, setMode]     = useState("signin"); // signin | signup
@@ -44,9 +45,10 @@ export default function AuthView({ onSuccess }) {
       <div className="relative w-full max-w-md">
         {/* Logo + name */}
         <div className="mb-6 flex flex-col items-center text-center">
-          <img src="/logo.png" alt="Panda Proof" className="h-20 w-20 rounded-3xl bg-white object-contain p-1 shadow-2xl" />
-          <h1 className="mt-3 text-2xl font-black tracking-tight">Panda Proof</h1>
-          <p className="text-xs font-medium text-white/40">Director Creativo IA</p>
+          <img src={BRAND.logo} alt={BRAND.appName} className="h-20 w-20 rounded-3xl bg-white object-contain p-1 shadow-2xl" />
+          <h1 className="mt-3 text-2xl font-black tracking-tight">{BRAND.appName}</h1>
+          <p className="text-xs font-medium text-white/40">{BRAND.tagline}</p>
+          <p className="mt-2 text-[10px] uppercase tracking-widest text-white/25">{BRAND.signature}</p>
         </div>
 
         {/* Card */}
@@ -65,7 +67,7 @@ export default function AuthView({ onSuccess }) {
           </div>
 
           <h2 className="mb-1 text-xl font-black">
-            {mode === "signin" ? "Bienvenido de vuelta" : "Únete a Panda Proof"}
+            {mode === "signin" ? "Bienvenido de vuelta" : `Únete a ${BRAND.appName}`}
           </h2>
           <p className="mb-6 text-sm text-white/40">
             {mode === "signin"

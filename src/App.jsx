@@ -7,6 +7,7 @@ import {
 } from "./supabase";
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
+import { BRAND } from "./brand";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -167,7 +168,7 @@ function RainbowLogo({ progress = null }) {
       </svg>
       <div className="h-24 w-24 overflow-hidden rounded-full border-2 border-white/10 bg-white shadow-xl"
            style={{ filter: "drop-shadow(0 0 12px rgba(150,80,255,0.4))" }}>
-        <img src="/logo.png" alt="Panda Proof" className="h-full w-full object-contain p-1" />
+        <img src={BRAND.logo} alt={BRAND.appName} className="h-full w-full object-contain p-1" />
       </div>
     </div>
   );
@@ -257,7 +258,7 @@ function IOSInstallBanner() {
       <div className="flex items-start gap-3 pr-8">
         <img src="/logo.png" alt="" className="h-12 w-12 flex-shrink-0 rounded-2xl bg-white object-contain p-0.5 shadow-lg" />
         <div>
-          <p className="text-sm font-black">Instala Panda Proof 🐼</p>
+          <p className="text-sm font-black">Instala {BRAND.appName} 🐼</p>
           <p className="mt-1 text-xs leading-relaxed text-white/60">
             Toca <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/15 text-[10px] font-black">⬆︎</span> en Safari y luego{" "}
             <span className="font-black text-white">«Añadir a Inicio»</span> para abrirla como app.
@@ -354,7 +355,7 @@ function UploadView({ onAnalyze, globalError }) {
           </span>
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/50 sm:mt-4 sm:text-base">
-          Sube tu diseño y Panda Proof evaluará su claridad, CTA, legibilidad móvil y
+          Sube tu diseño y {BRAND.appName} evaluará su claridad, CTA, legibilidad móvil y
           potencial de conversión. Recibirás un diagnóstico honesto y una versión optimizada.
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -446,7 +447,7 @@ function UploadView({ onAnalyze, globalError }) {
                     <span className="hidden sm:inline">Arrastra o </span>toca para seleccionar
                   </p>
                 </div>
-                <p className="text-[11px] text-white/25">Panda Proof detectará el contexto automáticamente</p>
+                <p className="text-[11px] text-white/25">{BRAND.appName} detectará el contexto automáticamente</p>
               </div>
             )}
           </div>
@@ -475,7 +476,7 @@ function UploadView({ onAnalyze, globalError }) {
           <div className="mb-5 rounded-2xl border border-cyan-400/10 bg-cyan-400/5 px-4 py-3">
             <p className="text-[11px] leading-relaxed text-cyan-200/70">
               {!image
-                ? "🔍 Al subir tu imagen, Panda Proof detectará el negocio, producto, público y objetivo automáticamente. Podrás editar antes del análisis."
+                ? `🔍 Al subir tu imagen, ${BRAND.appName} detectará el negocio, producto, público y objetivo automáticamente. Podrás editar antes del análisis.`
                 : extracting
                 ? "🔍 Detectando contexto de tu arte…"
                 : autoFilled
@@ -1400,11 +1401,11 @@ function MainApp({ session }) {
       <header className="sticky top-0 z-50 border-b border-white/10 bg-[#070812]/95 backdrop-blur-xl lg:hidden">
         {/* Top row: logo, name, score badge */}
         <div className="flex items-center gap-3 px-4 pt-3 pb-2">
-          <img src="/logo.png" alt="Panda Proof"
+          <img src={BRAND.logo} alt={BRAND.appName}
             className="h-9 w-9 flex-shrink-0 rounded-xl bg-white object-contain p-0.5 shadow" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black leading-tight">Panda Proof</p>
-            <p className="text-[10px] text-white/40 leading-none">Director Creativo IA</p>
+            <p className="text-sm font-black leading-tight">{BRAND.appName}</p>
+            <p className="text-[10px] text-white/40 leading-none">{BRAND.tagline}</p>
           </div>
           {analysis && view !== "analyzing" && (
             <button
@@ -1463,11 +1464,12 @@ function MainApp({ session }) {
 
           <div className="p-5">
             <div className="flex flex-col items-center gap-2 pb-2">
-              <img src="/logo.png" alt="Panda Proof"
+              <img src={BRAND.logo} alt={BRAND.appName}
                 className="h-24 w-24 rounded-3xl object-contain bg-white p-1 shadow-xl" />
               <div className="text-center">
-                <h1 className="text-lg font-black leading-tight">Panda Proof</h1>
-                <p className="text-[11px] font-medium text-white/40">Director Creativo IA</p>
+                <h1 className="text-lg font-black leading-tight">{BRAND.appName}</h1>
+                <p className="text-[11px] font-medium text-white/40">{BRAND.tagline}</p>
+                <p className="mt-1 text-[10px] text-white/25">{BRAND.signature}</p>
               </div>
             </div>
 

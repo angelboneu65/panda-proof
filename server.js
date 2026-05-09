@@ -254,7 +254,7 @@ function buildAnalyzePrompt({ nicho, producto, publico, plataforma, objetivo, of
     })
     .join("\n\n");
 
-  return `Eres Panda Proof, un director creativo senior con 20 años de experiencia en campañas de performance para marcas en Latinoamérica y Puerto Rico. Tu evaluación es honesta, empática y orientada a resultados comerciales reales.
+  return `Eres Panda AdLab (by Color Panda Media Lab), un director creativo senior con 20 años de experiencia en campañas de performance para marcas en Latinoamérica y Puerto Rico. Tu evaluación es honesta, empática y orientada a resultados comerciales reales.
 
 CONTEXTO DEL ARTE A EVALUAR:
 - Tipo de negocio: ${nicho}
@@ -755,7 +755,7 @@ app.post("/api/reverse-geocode", async (req, res) => {
     if (hasCoords) {
       try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=es`;
-        const r = await fetch(url, { headers: { "User-Agent": "PandaProof/1.0 (panda-proof.onrender.com)" } });
+        const r = await fetch(url, { headers: { "User-Agent": "PandaAdLab/1.0 (panda-proof.onrender.com)" } });
         if (r.ok) {
           const j  = await r.json();
           const ad = j.address || {};
@@ -883,6 +883,6 @@ The product from the source photo MUST be the visual hero of the composition.`;
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🐼 Panda Proof API → http://localhost:${PORT}`);
+  console.log(`🐼 Panda AdLab API → http://localhost:${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY) console.warn("⚠️  ANTHROPIC_API_KEY no encontrada");
 });

@@ -1,7 +1,7 @@
 {
-  "name": "Panda Proof — Director Creativo IA",
-  "short_name": "Panda Proof",
-  "description": "Analiza tus artes publicitarios con IA y descubre si están listos para vender. Panda Score, diagnóstico CTA, legibilidad móvil y arte optimizado.",
+  "name": "Panda AdLab — Director Creativo IA",
+  "short_name": "Panda AdLab",
+  "description": "Panda AdLab by Color Panda Media Lab. Analiza tu anuncio, mejora tu diseño y crea campañas que venden con IA. Panda Score, diagnóstico CTA, legibilidad móvil y arte optimizado.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

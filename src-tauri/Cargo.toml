@@ -1,7 +1,7 @@
 [package]
 name = "panda-proof"
 version = "0.1.0"
-description = "Panda Proof — Director Creativo IA"
+description = "Panda AdLab — Director Creativo IA"
 authors = ["Color Panda Media Lab"]
 edition = "2021"
 

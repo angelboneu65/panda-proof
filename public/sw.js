@@ -1,10 +1,11 @@
-// Panda Proof — Service Worker
-const CACHE = "panda-proof-v3";
+// Panda AdLab — Service Worker
+const CACHE = "panda-adlab-v4";
 
 const SHELL = [
   "/",
   "/index.html",
   "/manifest.json",
+  "/panda-adlab-logo.png",
   "/logo.png",
   "/apple-touch-icon.png",
   "/icon-192.png",

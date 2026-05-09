@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- Panda Proof — Supabase Schema
+-- Panda AdLab — Supabase Schema
 -- Pega esto en el SQL Editor de tu proyecto de Supabase y ejecútalo.
 -- ═══════════════════════════════════════════════════════════════════════════
 

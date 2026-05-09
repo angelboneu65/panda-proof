@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { BRAND } from "./brand";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -107,7 +108,7 @@ function RainbowSpinner({ progress = null }) {
       </svg>
       <div className="h-24 w-24 overflow-hidden rounded-full border-2 border-white/10 bg-white shadow-xl"
            style={{ filter: "drop-shadow(0 0 12px rgba(150,80,255,0.4))" }}>
-        <img src="/logo.png" alt="Panda Proof" className="h-full w-full object-contain p-1" />
+        <img src={BRAND.logo} alt={BRAND.appName} className="h-full w-full object-contain p-1" />
       </div>
     </div>
   );
@@ -135,6 +136,9 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/50 sm:mt-4 sm:text-base">
           Analiza un anuncio existente o convierte una foto en una campaña completa lista para vender.
         </p>
+        <p className="mt-4 text-[11px] uppercase tracking-widest text-white/25 sm:text-xs">
+          {BRAND.signature}
+        </p>
       </section>
 
       {/* ── Two main cards ── */}
@@ -150,7 +154,7 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
           </div>
           <h3 className="text-2xl font-black leading-tight">Analizar diseño</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/55">
-            Sube un arte existente y Panda Proof evaluará su claridad, CTA, legibilidad móvil y potencial de conversión.
+            Sube un arte existente y {BRAND.appName} evaluará su claridad, CTA, legibilidad móvil y potencial de conversión.
           </p>
 
           <div className="mt-5 grid grid-cols-2 gap-2">
@@ -184,7 +188,7 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
           </div>
           <h3 className="text-2xl font-black leading-tight">Foto a Campaña</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/60">
-            Toma una foto de un producto, servicio u objeto. Panda Proof detecta el nicho, sugiere precio competitivo y crea 5 anuncios usando tu logo como guía visual.
+            Toma una foto de un producto, servicio u objeto. {BRAND.appName} detecta el nicho, sugiere precio competitivo y crea 5 anuncios usando tu logo como guía visual.
           </p>
 
           <div className="mt-5 grid grid-cols-2 gap-2">
@@ -331,7 +335,7 @@ function PhotoStep({ data, update, setStep, setError }) {
         </span>
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/50">
-        Panda Proof analizará la imagen, detectará el nicho y creará una campaña visual completa.
+        {BRAND.appName} analizará la imagen, detectará el nicho y creará una campaña visual completa.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
