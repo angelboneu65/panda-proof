@@ -16,6 +16,63 @@ function detectCountry() {
   }
 }
 
+// Extrae [QUICK_REPLIES: A | B | C] del mensaje del asistente.
+// Devuelve { content (sin tag), replies (array) }
+function parseQuickReplies(text) {
+  if (!text) return { content: "", replies: [] };
+  const m = text.match(/\[QUICK_REPLIES:\s*([^\]]+)\]/i);
+  if (!m) return { content: text, replies: [] };
+  const replies = m[1].split("|").map((s) => s.trim()).filter(Boolean);
+  const content = text.replace(m[0], "").trim();
+  return { content, replies };
+}
+
+// Extrae bloques de código (```...```) y los marca para render especial con botón "copiar"
+// Devuelve un array de segmentos: { type: "text" | "code", value: string }
+function parseSegments(text) {
+  if (!text) return [];
+  const segments = [];
+  const regex = /```([\s\S]*?)```/g;
+  let lastIdx = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      segments.push({ type: "text", value: text.slice(lastIdx, match.index) });
+    }
+    segments.push({ type: "code", value: match[1].replace(/^\n/, "").replace(/\n$/, "") });
+    lastIdx = regex.lastIndex;
+  }
+  if (lastIdx < text.length) {
+    segments.push({ type: "text", value: text.slice(lastIdx) });
+  }
+  return segments.filter((s) => s.value.trim().length > 0);
+}
+
+function CodeBlock({ value }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) { /* ignore */ }
+  };
+  return (
+    <div className="my-2 overflow-hidden rounded-xl border border-white/15 bg-black/35">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-3 py-1.5">
+        <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Copy listo para pegar</span>
+        <button
+          onClick={handleCopy}
+          className="rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-black text-white/80 transition hover:bg-white/20"
+        >
+          {copied ? "✓ Copiado" : "📋 Copiar"}
+        </button>
+      </div>
+      <pre className="whitespace-pre-wrap break-words px-3 py-2.5 text-[13px] leading-relaxed text-white/90 font-sans">{value}</pre>
+    </div>
+  );
+}
+
 export default function ChatBubble() {
   const [open, setOpen]         = useState(false);
   const [messages, setMessages] = useState([]);
@@ -141,26 +198,25 @@ export default function ChatBubble() {
     reader.readAsDataURL(file);
   };
 
-  // ── Enviar mensaje ─────────────────────────────────────────────────────────
-  const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
+  // ── Enviar mensaje (opcionalmente con override desde chips) ────────────────
+  const sendInternal = useCallback(async ({ overrideContent = null } = {}) => {
     if (sending) return;
-    // Permite enviar solo imagen si no hay texto
-    if (!trimmed && !pendingImage) return;
-    if (trimmed.length > 1500) return;
 
-    const displayContent = trimmed || (pendingImage ? "📷 Imagen adjunta" : "");
+    const textRaw = overrideContent !== null ? overrideContent : input.trim();
+    if (!textRaw && !pendingImage) return;
+    if (textRaw.length > 1500) return;
+
+    const displayContent = textRaw || (pendingImage ? "📷 Imagen adjunta" : "");
     const userMsg = {
       role:    "user",
-      content: trimmed || "Aquí está la imagen para que generes el copy.",
-      // Para mostrar localmente la imagen en la burbuja del chat:
+      content: textRaw || "Aquí está la imagen para que generes el copy.",
       _localImage: pendingImage?.dataUrl || null,
       _displayContent: displayContent,
     };
 
     const next = [...messages, userMsg];
     setMessages(next);
-    setInput("");
+    if (overrideContent === null) setInput("");
     const imageToSend = pendingImage?.dataUrl || null;
     setPendingImage(null);
     setError(null);
@@ -169,7 +225,7 @@ export default function ChatBubble() {
     if (inputRef.current) inputRef.current.style.height = "auto";
 
     try {
-      const apiMessages = next.map((m) => ({ role: m.role, content: m.content })); // strip _local fields
+      const apiMessages = next.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -189,6 +245,9 @@ export default function ChatBubble() {
       setSending(false);
     }
   }, [input, sending, messages, pendingImage, userContext]);
+
+  const handleSend     = useCallback(() => sendInternal(), [sendInternal]);
+  const handleChipTap  = (option) => sendInternal({ overrideContent: option });
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -291,37 +350,78 @@ export default function ChatBubble() {
 
             {/* Mensajes */}
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-              {messages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {m.role === "assistant" && (
-                    <img
-                      src={BRAND.logo}
-                      alt=""
-                      className="mr-2 h-7 w-7 flex-shrink-0 rounded-lg bg-white object-contain p-0.5"
-                    />
-                  )}
-                  <div className={`flex max-w-[82%] flex-col gap-2`}>
-                    {m._localImage && (
+              {messages.map((m, i) => {
+                const isUser = m.role === "user";
+                const lastAssistantIdx = (() => {
+                  for (let k = messages.length - 1; k >= 0; k--) {
+                    if (messages[k].role === "assistant") return k;
+                  }
+                  return -1;
+                })();
+                const isLastAssistant = !isUser && i === lastAssistantIdx;
+
+                // Para el asistente: extrae quick-replies + bloques de código
+                const assistantText = isUser ? null : m.content;
+                const { content: cleanText, replies } = isUser
+                  ? { content: m._displayContent ?? m.content, replies: [] }
+                  : parseQuickReplies(assistantText);
+                const segments = isUser ? null : parseSegments(cleanText);
+
+                return (
+                  <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                    {!isUser && (
                       <img
-                        src={m._localImage}
+                        src={BRAND.logo}
                         alt=""
-                        className="max-h-48 self-end rounded-2xl border border-white/15 object-contain"
+                        className="mr-2 h-7 w-7 flex-shrink-0 rounded-lg bg-white object-contain p-0.5"
                       />
                     )}
-                    {(m._displayContent ?? m.content) && (
-                      <div
-                        className={`rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed ${
-                          m.role === "user"
-                            ? "self-end bg-white text-black"
-                            : "border border-white/10 bg-white/[0.06] text-white/90"
-                        }`}
-                      >
-                        {renderContent(m._displayContent ?? m.content)}
-                      </div>
-                    )}
+                    <div className="flex max-w-[88%] flex-col gap-2">
+                      {/* Imagen del usuario en el bubble */}
+                      {isUser && m._localImage && (
+                        <img
+                          src={m._localImage}
+                          alt=""
+                          className="max-h-48 self-end rounded-2xl border border-white/15 object-contain"
+                        />
+                      )}
+
+                      {/* Burbuja del usuario */}
+                      {isUser && (m._displayContent ?? m.content) && (
+                        <div className="self-end rounded-2xl bg-white px-3.5 py-2.5 text-[13.5px] leading-relaxed text-black">
+                          {renderContent(m._displayContent ?? m.content)}
+                        </div>
+                      )}
+
+                      {/* Burbuja del asistente: render por segmentos */}
+                      {!isUser && segments?.length > 0 && (
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-[13.5px] leading-relaxed text-white/90">
+                          {segments.map((s, j) => (
+                            s.type === "code"
+                              ? <CodeBlock key={j} value={s.value} />
+                              : <span key={j} className="block">{renderContent(s.value)}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Chips de quick-replies (solo en el último mensaje del asistente) */}
+                      {!isUser && isLastAssistant && replies.length > 0 && !sending && (
+                        <div className="flex flex-wrap gap-2">
+                          {replies.map((opt, j) => (
+                            <button
+                              key={j}
+                              onClick={() => handleChipTap(opt)}
+                              className="rounded-full border border-purple-400/30 bg-gradient-to-r from-purple-500/15 to-pink-500/10 px-3 py-1.5 text-[12px] font-black text-purple-100 transition hover:border-purple-400/60 hover:from-purple-500/25 hover:to-pink-500/20 active:scale-95"
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {sending && (
                 <div className="flex justify-start">
