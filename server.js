@@ -745,22 +745,27 @@ The product from the source photo MUST be the visual hero of the composition.`;
 app.post("/api/reverse-geocode", async (req, res) => {
   try {
     const { lat, lng, niche, productName, city: cityHint } = req.body || {};
-    if (!lat || !lng) return res.status(400).json({ error: "Faltan coordenadas." });
+    const hasCoords = typeof lat === "number" && typeof lng === "number" && (lat !== 0 || lng !== 0);
+    if (!hasCoords && !cityHint) {
+      return res.status(400).json({ error: "Necesitas coordenadas GPS o nombre de ciudad." });
+    }
 
-    // Nominatim — reverse geocoding gratis
+    // Nominatim — reverse geocoding gratis (solo si hay coordenadas reales)
     let city = "", region = "", country = "";
-    try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=es`;
-      const r = await fetch(url, { headers: { "User-Agent": "PandaProof/1.0 (panda-proof.onrender.com)" } });
-      if (r.ok) {
-        const j  = await r.json();
-        const ad = j.address || {};
-        city    = ad.city || ad.town || ad.village || ad.municipality || "";
-        region  = ad.state || ad.region || "";
-        country = ad.country || "";
+    if (hasCoords) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=es`;
+        const r = await fetch(url, { headers: { "User-Agent": "PandaProof/1.0 (panda-proof.onrender.com)" } });
+        if (r.ok) {
+          const j  = await r.json();
+          const ad = j.address || {};
+          city    = ad.city || ad.town || ad.village || ad.municipality || "";
+          region  = ad.state || ad.region || "";
+          country = ad.country || "";
+        }
+      } catch (e) {
+        console.warn("Nominatim falló:", e.message);
       }
-    } catch (e) {
-      console.warn("Nominatim falló:", e.message);
     }
 
     const finalCity = cityHint || city;
