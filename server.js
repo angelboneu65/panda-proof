@@ -157,19 +157,27 @@ app.use(express.json({ limit: "30mb" }));
 async function attachUser(req, _res, next) {
   req.user = null;
   req.profile = null;
-  if (!creditsEnabled || !supabaseAuth) return next();
+  if (!creditsEnabled) return next();
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   if (!token) return next();
   try {
-    const { data, error } = await supabaseAuth.auth.getUser(token);
+    // Usamos supabaseAdmin (service role) para validar el JWT — es más robusto
+    // que el cliente con publishable key, que en algunos formatos nuevos falla.
+    const { data, error } = await supabaseAdmin.auth.getUser(token);
+    if (error) {
+      console.warn("[auth] getUser error:", error.message);
+    }
     if (!error && data?.user) {
       req.user = data.user;
-      const { data: profile } = await supabaseAdmin
+      const { data: profile, error: pErr } = await supabaseAdmin
         .from("profiles").select("*").eq("id", data.user.id).single();
+      if (pErr) console.warn("[auth] profile load error:", pErr.message, "userId:", data.user.id);
       req.profile = profile || null;
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.warn("[auth] attachUser exception:", e.message);
+  }
   next();
 }
 app.use(attachUser);
