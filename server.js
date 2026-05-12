@@ -4,6 +4,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI, { toFile } from "openai";
 import cors  from "cors";
 import sharp from "sharp";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -34,7 +36,181 @@ const getOpenAI = () => {
 };
 
 app.use(cors({ origin: (origin, cb) => cb(null, true), credentials: true }));
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SUPABASE (service role) — gestiona créditos, perfiles, suscripciones
+// Si las env vars no están, el sistema de créditos queda DESACTIVADO
+// y las llamadas pasan libres (modo dev / backwards-compat).
+// ═════════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const creditsEnabled = !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+const supabaseAdmin = creditsEnabled
+  ? createSupabaseClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } })
+  : null;
+
+// Cliente separado SIN service role para validar el JWT del usuario
+const supabaseAuth = (SUPABASE_URL && (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY))
+  ? createSupabaseClient(SUPABASE_URL, process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY, { auth: { persistSession: false } })
+  : null;
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STRIPE — checkout + webhooks
+// ═════════════════════════════════════════════════════════════════════════════
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-10-28.acacia" })
+  : null;
+
+const STRIPE_PRICE_MAP = {
+  basic:             process.env.STRIPE_BASIC_PRICE_ID,
+  pro:               process.env.STRIPE_PRO_PRICE_ID,
+  "pack-1-round":    process.env.STRIPE_EXTRA_ROUND_PRICE_ID,
+  "pack-5-rounds":   process.env.STRIPE_EXTRA_5_ROUNDS_PRICE_ID,
+  "pack-50-credits": process.env.STRIPE_50_CREDITS_PRICE_ID,
+  "pack-150-credits":process.env.STRIPE_150_CREDITS_PRICE_ID,
+};
+
+// IMPORTANTE: el webhook DEBE registrarse ANTES de express.json() para que el
+// raw body llegue intacto y la firma se pueda verificar.
+app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
+    return res.status(503).json({ error: "Stripe no configurado" });
+  }
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error("❌ Stripe webhook signature:", err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const s = event.data.object;
+        const userId = s.metadata?.user_id;
+        const purchaseType = s.metadata?.purchase_type; // 'subscription' | 'package'
+        const slug = s.metadata?.slug;
+        if (userId && supabaseAdmin) {
+          // Guarda customer/subscription IDs
+          await supabaseAdmin.from("profiles").update({
+            stripe_customer_id:     s.customer || undefined,
+            stripe_subscription_id: s.subscription || undefined,
+          }).eq("id", userId);
+
+          if (purchaseType === "subscription" && slug) {
+            await supabaseAdmin.rpc("apply_subscription_grant", {
+              p_user_id: userId, p_plan_slug: slug, p_event: "subscription_monthly",
+            });
+          } else if (purchaseType === "package" && slug) {
+            await supabaseAdmin.rpc("apply_package_purchase", {
+              p_user_id: userId, p_package_slug: slug,
+            });
+          }
+        }
+        break;
+      }
+      case "invoice.paid": {
+        // Renovación mensual
+        const inv = event.data.object;
+        const subId = inv.subscription;
+        if (subId && supabaseAdmin) {
+          const { data: profile } = await supabaseAdmin
+            .from("profiles").select("id, plan").eq("stripe_subscription_id", subId).single();
+          if (profile?.id && profile?.plan && profile.plan !== "free") {
+            await supabaseAdmin.rpc("apply_subscription_grant", {
+              p_user_id: profile.id, p_plan_slug: profile.plan, p_event: "subscription_monthly",
+            });
+          }
+        }
+        break;
+      }
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted": {
+        const sub = event.data.object;
+        if (supabaseAdmin) {
+          await supabaseAdmin.from("profiles").update({
+            subscription_status: sub.status,
+            plan: sub.status === "active" ? undefined : "free",
+          }).eq("stripe_subscription_id", sub.id);
+        }
+        break;
+      }
+      default:
+        // ignoramos otros
+        break;
+    }
+    res.json({ received: true });
+  } catch (err) {
+    console.error("❌ Webhook handler:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.use(express.json({ limit: "30mb" }));
+
+// ═════════════════════════════════════════════════════════════════════════════
+// AUTH MIDDLEWARE — valida el JWT del usuario y carga su profile en req.user
+// Si no hay token, req.user queda null (las rutas decidirán si exigir auth).
+// ═════════════════════════════════════════════════════════════════════════════
+async function attachUser(req, _res, next) {
+  req.user = null;
+  req.profile = null;
+  if (!creditsEnabled || !supabaseAuth) return next();
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return next();
+  try {
+    const { data, error } = await supabaseAuth.auth.getUser(token);
+    if (!error && data?.user) {
+      req.user = data.user;
+      const { data: profile } = await supabaseAdmin
+        .from("profiles").select("*").eq("id", data.user.id).single();
+      req.profile = profile || null;
+    }
+  } catch (e) { /* ignore */ }
+  next();
+}
+app.use(attachUser);
+
+// Helpers de cobro (llaman a las RPCs). Devuelven { allowed, tx_id, info, error }
+async function consumeCredits(userId, amount, actionType, description, metadata = {}) {
+  if (!creditsEnabled) return { allowed: true, tx_id: null, skipped: true };
+  const { data, error } = await supabaseAdmin.rpc("consume_credits", {
+    p_user_id: userId, p_amount: amount, p_action_type: actionType,
+    p_description: description, p_metadata: metadata,
+  });
+  if (error) return { allowed: false, error: error.message };
+  if (!data?.allowed) return { allowed: false, info: data };
+  return { allowed: true, tx_id: data.transaction_id, info: data };
+}
+async function consumeImageRoundOrCredits(userId, creditCost, description, metadata = {}) {
+  if (!creditsEnabled) return { allowed: true, tx_id: null, skipped: true };
+  const { data, error } = await supabaseAdmin.rpc("consume_image_round_or_credits", {
+    p_user_id: userId, p_credit_cost: creditCost,
+    p_description: description, p_metadata: metadata,
+  });
+  if (error) return { allowed: false, error: error.message };
+  if (!data?.allowed) return { allowed: false, info: data };
+  return { allowed: true, tx_id: data.transaction_id, info: data };
+}
+async function refundTransaction(txId, reason) {
+  if (!creditsEnabled || !txId) return;
+  try { await supabaseAdmin.rpc("refund_transaction", { p_tx_id: txId, p_reason: reason }); }
+  catch (e) { console.error("refund error:", e.message); }
+}
+
+// Pequeño helper que crea respuesta 402 (Payment Required) consistente
+function send402(res, info) {
+  res.status(402).json({
+    error: "insufficient_credits",
+    reason: info?.reason || "Sin créditos suficientes",
+    credits_balance: info?.credits_balance ?? 0,
+    rounds_balance:  info?.rounds_balance  ?? 0,
+    required:        info?.required_credits ?? info?.required ?? 0,
+  });
+}
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health", (_req, res) =>
@@ -313,6 +489,14 @@ Devuelve ÚNICAMENTE este JSON válido, sin texto adicional ni markdown:
 
 // ── Analyze endpoint ──────────────────────────────────────────────────────────
 app.post("/api/analyze", upload.single("image"), async (req, res) => {
+  // ── Créditos: análisis premium = 5 créditos ───────────────────────
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para analizar." });
+  let charge_tx = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, 5, "ad_analysis", "Análisis Panda Score (Opus)", { endpoint: "analyze" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+  }
   try {
     if (!req.file)                      return res.status(400).json({ error: "No se recibió imagen." });
     if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
@@ -395,9 +579,10 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
       regenerationPrompt:    claudeResult.regenerationPrompt    ?? "",
     };
 
-    res.json({ success: true, analysis });
+    res.json({ success: true, analysis, credits: charge_tx ? { charged: 5, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ Analyze:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "Análisis falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -438,8 +623,19 @@ function buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, 
 
 // ── Generate / Edit image (gpt-image-1) ──────────────────────────────────────
 app.post("/api/generate", upload.single("image"), async (req, res) => {
+  // Créditos: 1 imagen high = 20 créditos
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar." });
+  let charge_tx = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, 20, "image_generation", "Regenerar arte optimizado", { endpoint: "generate" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+  }
   try {
-    if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
+    if (!req.file) {
+      if (charge_tx) await refundTransaction(charge_tx, "Sin imagen recibida");
+      return res.status(400).json({ error: "No se recibió imagen." });
+    }
 
     const { nicho, producto, publico, plataforma, objetivo, oferta, problemas, recomendaciones, mejoras, briefing, customInstructions } = req.body;
 
@@ -494,9 +690,10 @@ Reply with ONLY the prompt text. No explanation.`,
     });
 
     const base64 = response.data[0].b64_json;
-    res.json({ success: true, image: `data:image/png;base64,${base64}` });
+    res.json({ success: true, image: `data:image/png;base64,${base64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ Generate:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "Generate falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -607,11 +804,20 @@ Estima los hex de los colores con precisión. Responde los strings en español.`
 
 // 3) Genera 5 anuncios diferentes en paralelo
 app.post("/api/generate-campaign", async (req, res) => {
+  // Créditos: campaña de 5 artes = 1 ronda OR 100 créditos
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar campañas." });
+  let charge_tx = null, chargeInfo = null;
+  if (creditsEnabled) {
+    const check = await consumeImageRoundOrCredits(req.user.id, 100, "Foto a Campaña — 5 anuncios", { endpoint: "generate-campaign" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+    chargeInfo = check.info;
+  }
   try {
     const data = req.body || {};
-    if (!data.productName) return res.status(400).json({ error: "Faltan datos del producto." });
-    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
-    if (!process.env.OPENAI_API_KEY)    return res.status(500).json({ error: "OPENAI_API_KEY no configurada." });
+    if (!data.productName) { if (charge_tx) await refundTransaction(charge_tx, "Faltan datos"); return res.status(400).json({ error: "Faltan datos del producto." }); }
+    if (!process.env.ANTHROPIC_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "ANTHROPIC_API_KEY"); return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." }); }
+    if (!process.env.OPENAI_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "OPENAI_API_KEY"); return res.status(500).json({ error: "OPENAI_API_KEY no configurada." }); }
 
     // ── Paso 1: Estrategia con Claude — define los 5 ángulos ─────────────────
     const strategy = await client.messages.create({
@@ -732,9 +938,17 @@ The product from the source photo MUST be the visual hero of the composition.`;
       g.status === "fulfilled" ? g.value : { generatedImage: null, error: g.reason?.message || "fail" }
     );
 
-    res.json({ success: true, adAngles: results });
+    // Si TODAS las imágenes fallaron, hacemos refund
+    const okCount = results.filter((r) => r.generatedImage).length;
+    if (okCount === 0 && charge_tx) {
+      await refundTransaction(charge_tx, "Ninguna imagen se generó");
+      return res.status(500).json({ error: "No se pudo generar ninguna imagen.", adAngles: results });
+    }
+
+    res.json({ success: true, adAngles: results, credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined });
   } catch (err) {
     console.error("❌ generate-campaign:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "Campaign falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -818,10 +1032,18 @@ Responde en español.`,
 
 // 5) Regenerar UN solo anuncio (cuando el usuario edita texto o pide nueva versión)
 app.post("/api/regenerate-ad", async (req, res) => {
+  // Créditos: 1 imagen high = 20 créditos
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para regenerar." });
+  let charge_tx = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, 20, "image_generation", "Regenerar 1 anuncio", { endpoint: "regenerate-ad" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+  }
   try {
     const { angle, brand, sourcePhoto, format } = req.body || {};
-    if (!angle?.generationPrompt) return res.status(400).json({ error: "Falta el prompt del ángulo." });
-    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY no configurada." });
+    if (!angle?.generationPrompt) { if (charge_tx) await refundTransaction(charge_tx, "Falta prompt"); return res.status(400).json({ error: "Falta el prompt del ángulo." }); }
+    if (!process.env.OPENAI_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "OPENAI_API_KEY"); return res.status(500).json({ error: "OPENAI_API_KEY no configurada." }); }
 
     const openai = getOpenAI();
     const size   = format === "1080x1920" ? "1024x1536"
@@ -874,9 +1096,10 @@ The product from the source photo MUST be the visual hero of the composition.`;
         });
 
     const b64 = response.data[0].b64_json;
-    res.json({ success: true, image: `data:image/png;base64,${b64}` });
+    res.json({ success: true, image: `data:image/png;base64,${b64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ regenerate-ad:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "Regenerate-ad falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1272,8 +1495,196 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// PERFIL DEL USUARIO ACTUAL
+// ═════════════════════════════════════════════════════════════════════════════
+app.get("/api/me", async (req, res) => {
+  if (!creditsEnabled) return res.json({ creditsEnabled: false });
+  if (!req.user) return res.status(401).json({ error: "No autenticado" });
+  res.json({ creditsEnabled: true, profile: req.profile });
+});
+
+app.get("/api/me/transactions", async (req, res) => {
+  if (!creditsEnabled || !req.user) return res.status(401).json({ error: "No autenticado" });
+  const { data, error } = await supabaseAdmin
+    .from("credit_transactions")
+    .select("*")
+    .eq("user_id", req.user.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ transactions: data || [] });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PLANES Y PAQUETES (público)
+// ═════════════════════════════════════════════════════════════════════════════
+app.get("/api/plans", async (_req, res) => {
+  if (!creditsEnabled) return res.json({ plans: [], packages: [] });
+  const [{ data: plans }, { data: packages }] = await Promise.all([
+    supabaseAdmin.from("plans").select("*").eq("is_active", true).order("display_order"),
+    supabaseAdmin.from("credit_packages").select("*").eq("is_active", true).order("display_order"),
+  ]);
+  res.json({ plans: plans || [], packages: packages || [] });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ADMIN ENDPOINTS — requieren rol admin
+// ═════════════════════════════════════════════════════════════════════════════
+function requireAdmin(req, res) {
+  if (!creditsEnabled) { res.status(503).json({ error: "Sistema de créditos desactivado" }); return false; }
+  if (!req.user || !req.profile || req.profile.role !== "admin") {
+    res.status(403).json({ error: "Solo administradores" });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/admin/users", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const search = (req.query.q || "").toString().trim();
+  let query = supabaseAdmin.from("profiles").select("*").order("created_at", { ascending: false }).limit(100);
+  if (search) query = query.ilike("email", `%${search}%`);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ users: data || [] });
+});
+
+app.get("/api/admin/user/:id/transactions", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { data, error } = await supabaseAdmin
+    .from("credit_transactions").select("*")
+    .eq("user_id", req.params.id)
+    .order("created_at", { ascending: false }).limit(100);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ transactions: data || [] });
+});
+
+// Acción admin unificada — para usar desde la UI
+app.post("/api/admin/update-user", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { user_id, action, amount, value, description } = req.body || {};
+  if (!user_id || !action) return res.status(400).json({ error: "Faltan parámetros" });
+
+  // Como las RPCs validan auth.uid(), las llamamos en nombre del admin con su JWT.
+  // Pero el server usa service role — así que en lugar de RPC con auth, usamos updates
+  // directos + transacciones manuales (más simple y atómico).
+  try {
+    switch (action) {
+      case "grant_credits": {
+        if (!Number.isFinite(amount)) return res.status(400).json({ error: "amount inválido" });
+        const { data: p, error } = await supabaseAdmin
+          .from("profiles").select("credits_balance").eq("id", user_id).single();
+        if (error || !p) return res.status(404).json({ error: "Usuario no encontrado" });
+        const newBal = (p.credits_balance || 0) + amount;
+        await supabaseAdmin.from("profiles").update({ credits_balance: newBal, updated_at: new Date().toISOString() }).eq("id", user_id);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id, amount,
+          transaction_type: amount >= 0 ? "admin_grant" : "admin_remove",
+          description: description || `Admin ajustó ${amount > 0 ? "+" : ""}${amount} créditos`,
+          created_by: req.user.id,
+        });
+        return res.json({ success: true, new_balance: newBal });
+      }
+      case "grant_rounds": {
+        if (!Number.isFinite(amount)) return res.status(400).json({ error: "amount inválido" });
+        const { data: p, error } = await supabaseAdmin
+          .from("profiles").select("image_rounds_balance").eq("id", user_id).single();
+        if (error || !p) return res.status(404).json({ error: "Usuario no encontrado" });
+        const newBal = (p.image_rounds_balance || 0) + amount;
+        await supabaseAdmin.from("profiles").update({ image_rounds_balance: newBal, updated_at: new Date().toISOString() }).eq("id", user_id);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id, amount,
+          transaction_type: amount >= 0 ? "admin_grant" : "admin_remove",
+          description: description || `Admin ajustó ${amount > 0 ? "+" : ""}${amount} rondas`,
+          created_by: req.user.id, metadata: { unit: "image_rounds" },
+        });
+        return res.json({ success: true, new_rounds: newBal });
+      }
+      case "set_unlimited": {
+        const v = !!value;
+        await supabaseAdmin.from("profiles").update({ is_unlimited: v, updated_at: new Date().toISOString() }).eq("id", user_id);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id, amount: 0, transaction_type: "adjustment",
+          description: v ? "Activado modo ilimitado" : "Desactivado modo ilimitado",
+          created_by: req.user.id, metadata: { field: "is_unlimited", value: v },
+        });
+        return res.json({ success: true });
+      }
+      case "set_role": {
+        if (!["user", "admin"].includes(value)) return res.status(400).json({ error: "Rol inválido" });
+        await supabaseAdmin.from("profiles").update({ role: value, updated_at: new Date().toISOString() }).eq("id", user_id);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id, amount: 0, transaction_type: "adjustment",
+          description: `Rol cambiado a ${value}`,
+          created_by: req.user.id, metadata: { field: "role", value },
+        });
+        return res.json({ success: true });
+      }
+      case "set_plan": {
+        if (!["free", "basic", "pro", "admin"].includes(value)) return res.status(400).json({ error: "Plan inválido" });
+        await supabaseAdmin.from("profiles").update({ plan: value, updated_at: new Date().toISOString() }).eq("id", user_id);
+        await supabaseAdmin.from("credit_transactions").insert({
+          user_id, amount: 0, transaction_type: "adjustment",
+          description: `Plan cambiado a ${value}`,
+          created_by: req.user.id, metadata: { field: "plan", value },
+        });
+        return res.json({ success: true });
+      }
+      default:
+        return res.status(400).json({ error: "Acción desconocida" });
+    }
+  } catch (err) {
+    console.error("admin/update-user:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STRIPE — Checkout Session (suscripciones + paquetes)
+// ═════════════════════════════════════════════════════════════════════════════
+app.post("/api/stripe/create-checkout", async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe no configurado (falta STRIPE_SECRET_KEY)" });
+  if (!req.user) return res.status(401).json({ error: "Necesitas iniciar sesión" });
+
+  const { slug, type, return_url } = req.body || {};
+  if (!slug || !type) return res.status(400).json({ error: "Falta slug o type" });
+  const priceId = STRIPE_PRICE_MAP[slug];
+  if (!priceId) return res.status(400).json({ error: `Price ID no configurado para ${slug}. Agregalo en env vars.` });
+
+  // Crea o reutiliza customer
+  let customerId = req.profile?.stripe_customer_id;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: req.user.email,
+      metadata: { user_id: req.user.id },
+    });
+    customerId = customer.id;
+    await supabaseAdmin.from("profiles").update({ stripe_customer_id: customerId }).eq("id", req.user.id);
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode: type === "subscription" ? "subscription" : "payment",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: (return_url || "https://stirring-speculoos-ca869c.netlify.app/") + "?checkout=success",
+    cancel_url:  (return_url || "https://stirring-speculoos-ca869c.netlify.app/") + "?checkout=cancel",
+    metadata: {
+      user_id: req.user.id,
+      purchase_type: type, // 'subscription' o 'package'
+      slug,
+    },
+  });
+
+  res.json({ url: session.url });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🐼 Panda AdLab API → http://localhost:${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY) console.warn("⚠️  ANTHROPIC_API_KEY no encontrada");
+  if (!creditsEnabled) console.warn("⚠️  Sistema de créditos DESACTIVADO (falta SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)");
+  else console.log("✓  Sistema de créditos ACTIVO");
+  if (!stripe) console.warn("⚠️  Stripe DESACTIVADO (falta STRIPE_SECRET_KEY)");
+  else console.log("✓  Stripe ACTIVO");
 });

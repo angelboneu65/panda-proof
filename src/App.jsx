@@ -9,6 +9,10 @@ import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
 import { BRAND } from "./brand";
 import ChatBubble from "./ChatBubble";
+import AdminPanel from "./AdminPanel";
+import CreditsModal from "./CreditsModal";
+import { useProfile } from "./useProfile";
+import { onInsufficientCredits } from "./api";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -298,7 +302,8 @@ function UploadView({ onAnalyze, globalError }) {
     try {
       const fd = new FormData();
       fd.append("image", file);
-      const res  = await fetch(`${API_BASE}/api/extract`, { method: "POST", body: fd });
+      const { authedFetch } = await import("./api");
+      const res  = await authedFetch(`/api/extract`, { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.success) {
         setForm({
@@ -648,7 +653,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
       const fd = new FormData();
       fd.append("image", blob, "arte-mejorado.png");
       Object.entries(formData).forEach(([k, v]) => v && fd.append(k, v));
-      const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
+      const { authedFetch } = await import("./api");
+      const res  = await authedFetch(`/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error");
       setGenScore(data.analysis.pandaScore);
@@ -687,7 +693,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
       if (regenerationPrompt)             fd.append("briefing",         regenerationPrompt);
       if (customPrompt.trim())            fd.append("customInstructions", customPrompt.trim());
 
-      const res  = await fetch(`${API_BASE}/api/generate`, { method: "POST", body: fd });
+      const { authedFetch } = await import("./api");
+      const res  = await authedFetch(`/api/generate`, { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error al generar imagen");
       setGenProgress(100);
@@ -1240,7 +1247,28 @@ export default function App() {
 
 // ── Main app shell (after auth) ───────────────────────────────────────────────
 function MainApp({ session }) {
-  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign
+  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin
+  const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
+  const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
+
+  // Listener global: cuando un endpoint devuelve 402, abrimos el modal de créditos
+  useEffect(() => {
+    onInsufficientCredits((info) => setCreditsModal({ open: true, info }));
+    return () => onInsufficientCredits(null);
+  }, []);
+
+  // Si volvemos del checkout de Stripe con ?checkout=success, refrescamos
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "success") {
+      // Damos un par de segundos al webhook para procesar
+      setTimeout(() => refreshProfile(), 2500);
+      // Limpiamos el query string
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
+  const isAdmin = profile?.role === "admin" || profile?.is_unlimited === true;
   const [preview,   setPreview]   = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [analysis,  setAnalysis]  = useState(null);
@@ -1331,11 +1359,15 @@ function MainApp({ session }) {
       const fd = new FormData();
       fd.append("image", file);
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-      const res  = await fetch(`${API_BASE}/api/analyze`, { method: "POST", body: fd });
+      // Importamos authedFetch dinámicamente para mandar el JWT del usuario.
+      const { authedFetch } = await import("./api");
+      const res  = await authedFetch(`/api/analyze`, { method: "POST", body: fd });
       const data = await res.json();
+      if (res.status === 402) { setView("upload"); return; /* modal lo maneja */ }
       if (!res.ok || !data.success) throw new Error(data.error ?? "Error desconocido");
       setAnalysis(data.analysis);
       setView("results");
+      refreshProfile();
 
       // Save to DB if logged in
       if (supabaseEnabled && session) {
@@ -1420,6 +1452,18 @@ function MainApp({ session }) {
               <p className="mt-0.5 text-base font-black leading-none">{analysis.pandaScore}</p>
             </button>
           )}
+          {creditsEnabled && profile && (
+            <button
+              onClick={() => setCreditsModal({ open: true, info: null })}
+              className="flex-shrink-0 rounded-2xl border border-purple-400/20 bg-purple-400/10 px-2.5 py-1 text-center"
+              title={profile.is_unlimited ? "Créditos ilimitados" : "Comprar más créditos"}
+            >
+              <p className="text-[9px] font-black uppercase tracking-widest text-purple-200 leading-none">Créditos</p>
+              <p className="mt-0.5 text-[13px] font-black leading-none">
+                {profile.is_unlimited ? "∞" : profile.credits_balance}
+              </p>
+            </button>
+          )}
           {supabaseEnabled && session && (
             <button
               onClick={handleLogout}
@@ -1456,6 +1500,14 @@ function MainApp({ session }) {
                   {history.length + campaignHistory.length + savedResults.length}
                 </span>
               )}
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setView("admin")}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "admin" ? "bg-white text-black" : "bg-pink-500/15 text-pink-200 active:bg-pink-500/25"}`}
+            >
+              <span>⚙️</span> Admin
             </button>
           )}
         </div>
@@ -1503,7 +1555,40 @@ function MainApp({ session }) {
                   )}
                 </div>
               )}
+              {isAdmin && (
+                <div
+                  onClick={() => setView("admin")}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "admin" ? "bg-white text-black" : "border border-pink-400/20 bg-pink-500/10 text-pink-200 hover:bg-pink-500/15"}`}
+                >
+                  <span>⚙️</span> Admin Panel
+                </div>
+              )}
             </nav>
+
+            {/* Créditos en sidebar */}
+            {creditsEnabled && profile && (
+              <div className="mt-4 rounded-2xl border border-purple-400/20 bg-gradient-to-br from-purple-600/15 via-pink-500/5 to-cyan-500/15 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-purple-200">Tu cuenta</p>
+                {profile.is_unlimited ? (
+                  <>
+                    <p className="mt-2 text-xl font-black">∞ Ilimitado</p>
+                    <p className="text-[11px] text-white/55">Plan {profile.plan}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-2 text-[24px] font-black leading-none">{profile.credits_balance}</p>
+                    <p className="text-[11px] text-white/55">créditos · {profile.image_rounds_balance} rondas</p>
+                    <p className="mt-1 text-[10px] text-white/40">Plan: {profile.plan}</p>
+                    <button
+                      onClick={() => setCreditsModal({ open: true, info: null })}
+                      className="mt-3 w-full rounded-xl bg-white px-3 py-2 text-[11px] font-black text-black hover:bg-white/90"
+                    >
+                      Comprar créditos
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             {analysis ? (
               <div
@@ -1593,8 +1678,16 @@ function MainApp({ session }) {
               onReset={handleReset}
             />
           )}
+          {view === "admin" && isAdmin && <AdminPanel />}
         </main>
       </div>
+
+      {/* Modal global de créditos — se abre por 402 o desde botones manuales */}
+      <CreditsModal
+        open={creditsModal.open}
+        info={creditsModal.info}
+        onClose={() => { setCreditsModal({ open: false, info: null }); refreshProfile(); }}
+      />
     </div>
   );
 }

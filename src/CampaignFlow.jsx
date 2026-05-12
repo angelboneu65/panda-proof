@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { BRAND } from "./brand";
 
+import { authedFetch } from "./api";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -396,7 +397,7 @@ function AnalyzingStep({ data, update, setStep, setError }) {
         const fd = new FormData();
         fd.append("image", blob, "photo.jpg");
 
-        const res = await fetch(`${API_BASE}/api/analyze-photo`, { method: "POST", body: fd });
+        const res = await authedFetch(`/api/analyze-photo`, { method: "POST", body: fd });
         if (cancelled) return;
 
         if (res.ok) {
@@ -460,7 +461,7 @@ function FormStep({ data, update, setStep }) {
           },
         });
         try {
-          const res = await fetch(`${API_BASE}/api/reverse-geocode`, {
+          const res = await authedFetch(`/api/reverse-geocode`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -497,7 +498,7 @@ function FormStep({ data, update, setStep }) {
     if (!data.location.city || !data.detectedNiche) return;
     setAskingLocation(true);
     try {
-      const res = await fetch(`${API_BASE}/api/reverse-geocode`, {
+      const res = await authedFetch(`/api/reverse-geocode`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -640,7 +641,7 @@ function LogoStep({ data, update, updateBrand, setStep, setError }) {
         const blob = await (await fetch(dataUrl)).blob();
         const fd = new FormData();
         fd.append("image", blob, "logo.png");
-        const res = await fetch(`${API_BASE}/api/extract-brand`, { method: "POST", body: fd });
+        const res = await authedFetch(`/api/extract-brand`, { method: "POST", body: fd });
         if (res.ok) {
           const r = await res.json();
           if (r.success) updateBrand(r.brand || {});
@@ -792,7 +793,7 @@ function GeneratingStep({ data, update, setStep, setError }) {
       }, INTERVAL);
 
       try {
-        const res = await fetch(`${API_BASE}/api/generate-campaign`, {
+        const res = await authedFetch(`/api/generate-campaign`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -923,7 +924,7 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate }) {
     if (editing) onUpdate(draft);
 
     try {
-      const res = await fetch(`${API_BASE}/api/regenerate-ad`, {
+      const res = await authedFetch(`/api/regenerate-ad`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ angle: angleForGen, brand, sourcePhoto, format }),
