@@ -36,7 +36,11 @@ const getOpenAI = () => {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
 
-app.use(cors({ origin: (origin, cb) => cb(null, true), credentials: true }));
+app.use(cors({
+  origin: (origin, cb) => cb(null, true),
+  credentials: true,
+  exposedHeaders: ["X-Credits-Charged"],
+}));
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SUPABASE (service role) — gestiona créditos, perfiles, suscripciones
@@ -623,6 +627,7 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
       regenerationPrompt:    claudeResult.regenerationPrompt    ?? "",
     };
 
+    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 5, type: "credits", action: "ad_analysis" }));
     res.json({ success: true, analysis, credits: charge_tx ? { charged: 5, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ Analyze:", err.message);
@@ -734,6 +739,7 @@ Reply with ONLY the prompt text. No explanation.`,
     });
 
     const base64 = response.data[0].b64_json;
+    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 20, type: "credits", action: "image_generation" }));
     res.json({ success: true, image: `data:image/png;base64,${base64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ Generate:", err.message);
@@ -989,6 +995,7 @@ The product from the source photo MUST be the visual hero of the composition.`;
       return res.status(500).json({ error: "No se pudo generar ninguna imagen.", adAngles: results });
     }
 
+    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: "campaign" }));
     res.json({ success: true, adAngles: results, credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined });
   } catch (err) {
     console.error("❌ generate-campaign:", err.message);
@@ -1140,6 +1147,7 @@ The product from the source photo MUST be the visual hero of the composition.`;
         });
 
     const b64 = response.data[0].b64_json;
+    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 20, type: "credits", action: "image_generation" }));
     res.json({ success: true, image: `data:image/png;base64,${b64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ regenerate-ad:", err.message);

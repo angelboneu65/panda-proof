@@ -12,7 +12,7 @@ import ChatBubble from "./ChatBubble";
 import AdminPanel from "./AdminPanel";
 import CreditsModal from "./CreditsModal";
 import { useProfile } from "./useProfile";
-import { onInsufficientCredits } from "./api";
+import { onInsufficientCredits, onCreditCharge } from "./api";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1249,6 +1249,7 @@ export default function App() {
 function MainApp({ session }) {
   const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin
   const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
+  const [chargeToast, setChargeToast]   = useState(null);
   const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
 
   // Listener global: cuando un endpoint devuelve 402, abrimos el modal de créditos
@@ -1256,6 +1257,23 @@ function MainApp({ session }) {
     onInsufficientCredits((info) => setCreditsModal({ open: true, info }));
     return () => onInsufficientCredits(null);
   }, []);
+
+  // Listener global: cuando se cobran créditos, refresca perfil y muestra toast
+  useEffect(() => {
+    onCreditCharge((info) => {
+      refreshProfile();
+      const label =
+        info.type === "round"      ? `Se descontó 1 ronda de imágenes.`
+      : info.type === "credits"    ? `Se descontaron ${info.charged} créditos.`
+      : info.type === "unlimited"  ? null  // admin/unlimited no muestra toast
+                                   : `Cobro registrado.`;
+      if (label) {
+        setChargeToast(label);
+        setTimeout(() => setChargeToast(null), 4000);
+      }
+    });
+    return () => onCreditCharge(null);
+  }, [refreshProfile]);
 
   // Si volvemos del checkout de Stripe con ?checkout=success, refrescamos
   useEffect(() => {
@@ -1688,6 +1706,16 @@ function MainApp({ session }) {
         info={creditsModal.info}
         onClose={() => { setCreditsModal({ open: false, info: null }); refreshProfile(); }}
       />
+
+      {/* Toast de cobro de créditos */}
+      {chargeToast && (
+        <div
+          className="fixed left-1/2 z-[250] -translate-x-1/2 transform rounded-full border border-emerald-400/30 bg-emerald-500/15 px-4 py-2 text-[12px] font-black text-emerald-100 backdrop-blur-xl shadow-2xl"
+          style={{ top: "calc(env(safe-area-inset-top, 0px) + 80px)" }}
+        >
+          💳 {chargeToast}
+        </div>
+      )}
     </div>
   );
 }

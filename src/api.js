@@ -9,6 +9,11 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 let _onInsufficientCredits = null;
 export function onInsufficientCredits(cb) { _onInsufficientCredits = cb; }
 
+// Listener global para cuando se realiza una acción que cobra créditos.
+// El frontend lo usa para refrescar el perfil y mostrar toast.
+let _onCreditCharge = null;
+export function onCreditCharge(cb) { _onCreditCharge = cb; }
+
 export async function authedFetch(path, options = {}) {
   let token = null;
   if (supabase) {
@@ -28,6 +33,12 @@ export async function authedFetch(path, options = {}) {
       const info = await res.clone().json();
       if (_onInsufficientCredits) _onInsufficientCredits(info);
     } catch (e) { /* ignore */ }
+  }
+
+  // Si el endpoint cobró créditos (header X-Credits-Charged), avisamos
+  const charged = res.headers.get("x-credits-charged");
+  if (charged && _onCreditCharge) {
+    try { _onCreditCharge(JSON.parse(charged)); } catch (e) { /* ignore */ }
   }
   return res;
 }
