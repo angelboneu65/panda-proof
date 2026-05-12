@@ -672,11 +672,11 @@ function buildSurgicalContext({ nicho, producto, publico, plataforma, objetivo, 
 
 // ── Generate / Edit image (gpt-image-1) ──────────────────────────────────────
 app.post("/api/generate", upload.single("image"), async (req, res) => {
-  // Créditos: 1 imagen high = 20 créditos
+  // Créditos: 1 imagen high = 5 créditos
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar." });
   let charge_tx = null;
   if (creditsEnabled) {
-    const check = await consumeCredits(req.user.id, 20, "image_generation", "Regenerar arte optimizado", { endpoint: "generate" });
+    const check = await consumeCredits(req.user.id, 5, "image_generation", "Regenerar arte optimizado", { endpoint: "generate" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
   }
@@ -739,8 +739,8 @@ Reply with ONLY the prompt text. No explanation.`,
     });
 
     const base64 = response.data[0].b64_json;
-    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 20, type: "credits", action: "image_generation" }));
-    res.json({ success: true, image: `data:image/png;base64,${base64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
+    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 5, type: "credits", action: "image_generation" }));
+    res.json({ success: true, image: `data:image/png;base64,${base64}`, credits: charge_tx ? { charged: 5, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ Generate:", err.message);
     if (charge_tx) await refundTransaction(charge_tx, "Generate falló: " + err.message);
@@ -858,7 +858,7 @@ app.post("/api/generate-campaign", async (req, res) => {
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar campañas." });
   let charge_tx = null, chargeInfo = null;
   if (creditsEnabled) {
-    const check = await consumeImageRoundOrCredits(req.user.id, 100, "Foto a Campaña — 5 anuncios", { endpoint: "generate-campaign" });
+    const check = await consumeImageRoundOrCredits(req.user.id, 25, "Foto a Campaña — 5 anuncios", { endpoint: "generate-campaign" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
     chargeInfo = check.info;
@@ -1083,11 +1083,11 @@ Responde en español.`,
 
 // 5) Regenerar UN solo anuncio (cuando el usuario edita texto o pide nueva versión)
 app.post("/api/regenerate-ad", async (req, res) => {
-  // Créditos: 1 imagen high = 20 créditos
+  // Créditos: 1 imagen high = 5 créditos
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para regenerar." });
   let charge_tx = null;
   if (creditsEnabled) {
-    const check = await consumeCredits(req.user.id, 20, "image_generation", "Regenerar 1 anuncio", { endpoint: "regenerate-ad" });
+    const check = await consumeCredits(req.user.id, 5, "image_generation", "Regenerar 1 anuncio", { endpoint: "regenerate-ad" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
   }
@@ -1147,8 +1147,8 @@ The product from the source photo MUST be the visual hero of the composition.`;
         });
 
     const b64 = response.data[0].b64_json;
-    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 20, type: "credits", action: "image_generation" }));
-    res.json({ success: true, image: `data:image/png;base64,${b64}`, credits: charge_tx ? { charged: 20, type: "credits" } : undefined });
+    if (charge_tx) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: 5, type: "credits", action: "image_generation" }));
+    res.json({ success: true, image: `data:image/png;base64,${b64}`, credits: charge_tx ? { charged: 5, type: "credits" } : undefined });
   } catch (err) {
     console.error("❌ regenerate-ad:", err.message);
     if (charge_tx) await refundTransaction(charge_tx, "Regenerate-ad falló: " + err.message);

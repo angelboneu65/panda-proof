@@ -92,9 +92,9 @@ Cuando el server arranque, vas a ver:
 | `/api/reverse-geocode` | Geo + competencia local | **Gratis** (helper) |
 | `/api/chat` | Asistente Panda | **Gratis** |
 | `/api/analyze` | Panda Score (Opus) | **5 créditos** |
-| `/api/generate` | Regenerar arte optimizado | **20 créditos** |
-| `/api/regenerate-ad` | Regenerar 1 anuncio de campaña | **20 créditos** |
-| `/api/generate-campaign` | 5 anuncios Foto a Campaña | **1 ronda O 100 créditos** |
+| `/api/generate` | Regenerar arte optimizado | **5 créditos** |
+| `/api/regenerate-ad` | Regenerar 1 anuncio de campaña | **5 créditos** |
+| `/api/generate-campaign` | 5 anuncios Foto a Campaña | **1 ronda O 25 créditos** |
 
 **Admin (`role='admin'` o `is_unlimited=true`)**: no se le descuenta nada. Las acciones quedan loggeadas con `(unlimited)` en la descripción.
 
@@ -202,8 +202,8 @@ STRIPE_150_CREDITS_PRICE_ID=<PRICE_ID_PACK_150_CREDITS>
 
 ### D. Consumir créditos
 1. Con el usuario de prueba (110 créditos) hacer un análisis → debe bajar a `105` (5 créditos del análisis)
-2. Regenerar arte → debe bajar a `85` (20 créditos)
-3. Hacer una campaña Foto a Campaña → debe bajar a `0 créditos + 0 rondas` (100 créditos)
+2. Regenerar arte → debe bajar a `100` (5 créditos)
+3. Hacer una campaña Foto a Campaña → debe bajar a `75 créditos + 0 rondas` (25 créditos)
 
 ### E. Sin créditos
 1. Intenta otra acción cara → aparece el modal "Necesitas más créditos"
