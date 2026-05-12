@@ -162,18 +162,26 @@ async function attachUser(req, _res, next) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   if (!token) return next();
   try {
-    // Usamos supabaseAdmin (service role) para validar el JWT — es más robusto
-    // que el cliente con publishable key, que en algunos formatos nuevos falla.
-    const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (error) {
-      console.warn("[auth] getUser error:", error.message);
-    }
-    if (!error && data?.user) {
-      req.user = data.user;
-      const { data: profile, error: pErr } = await supabaseAdmin
-        .from("profiles").select("*").eq("id", data.user.id).single();
-      if (pErr) console.warn("[auth] profile load error:", pErr.message, "userId:", data.user.id);
-      req.profile = profile || null;
+    // Llamamos directo al REST de Auth de Supabase. El supabase-js client
+    // tiene fricción con los nuevos sb_publishable_/sb_secret_ keys + JWT.
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: {
+        apikey:        SUPABASE_SERVICE_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.warn("[auth] supabase /auth/v1/user", r.status, t.slice(0, 150));
+    } else {
+      const user = await r.json();
+      if (user?.id) {
+        req.user = user;
+        const { data: profile, error: pErr } = await supabaseAdmin
+          .from("profiles").select("*").eq("id", user.id).single();
+        if (pErr) console.warn("[auth] profile load error:", pErr.message, "userId:", user.id);
+        req.profile = profile || null;
+      }
     }
   } catch (e) {
     console.warn("[auth] attachUser exception:", e.message);
