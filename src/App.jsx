@@ -15,8 +15,10 @@ import AccountSettings from "./AccountSettings";
 import CommunityView from "./CommunityView";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
-import DesignEditor from "./DesignEditor";
 import { saveDesignEdit } from "./supabase";
+const DesignEditor = React.lazy(() =>
+  import("./DesignEditor").catch(() => ({ default: () => null }))
+);
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1804,13 +1806,15 @@ function MainApp({ session }) {
       )}
 
       {/* Editor visual por capas (Polotno) — fullscreen overlay */}
-      <DesignEditor
-        open={editor.open}
-        baseImageUrl={editor.imageUrl}
-        resultId={editor.resultId}
-        onClose={closeEditor}
-        onSaved={handleSavedDesign}
-      />
+      <React.Suspense fallback={null}>
+        <DesignEditor
+          open={editor.open}
+          baseImageUrl={editor.imageUrl}
+          resultId={editor.resultId}
+          onClose={closeEditor}
+          onSaved={handleSavedDesign}
+        />
+      </React.Suspense>
     </div>
   );
 }
