@@ -963,8 +963,28 @@ Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
       }
     }
 
+    // Composita el logo sobre la foto fuente para que el modelo lo vea como referencia visual
+    if (sourcePng && data.brand?.logo) {
+      try {
+        const logob64  = data.brand.logo.includes(",") ? data.brand.logo.split(",")[1] : data.brand.logo;
+        const logoMeta = await sharp(Buffer.from(logob64, "base64")).metadata();
+        const srcMeta  = await sharp(sourcePng).metadata();
+        const logoSize = Math.round(Math.min(srcMeta.width, srcMeta.height) * 0.18); // 18% del lado menor
+        const resizedLogo = await sharp(Buffer.from(logob64, "base64"))
+          .resize(logoSize, logoSize, { fit: "contain", background: { r:0, g:0, b:0, alpha:0 } })
+          .png().toBuffer();
+        sourcePng = await sharp(sourcePng)
+          .composite([{ input: resizedLogo, gravity: "northeast", blend: "over" }])
+          .png().toBuffer();
+        console.log(`🖼  Logo compuesto sobre la foto (${logoSize}px, esquina superior derecha)`);
+      } catch (e) {
+        console.warn("⚠️  No se pudo compositar el logo:", e.message);
+      }
+    }
+
     const brandColors  = data.brand?.primaryColors?.join(", ") || "use confident brand accents";
     const visualStyle  = data.brand?.visualStyle || "modern, premium";
+    const hasLogo      = !!data.brand?.logo;
 
     // Toma sólo los primeros adCount ángulos (1 o 5)
     const generations = await Promise.allSettled(
@@ -974,7 +994,7 @@ Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
 
 Brand color palette: ${brandColors}.
 Visual style: ${visualStyle}.
-Logo placement: top corner, small but visible.
+${hasLogo ? "IMPORTANT: The brand logo is visible in the top-right corner of the reference photo. You MUST reproduce this exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions." : ""}
 CTA: clearly visible, high contrast.
 Typography: clean, mobile-readable.
 The product from the source photo MUST be the visual hero of the composition.`;
@@ -1130,8 +1150,27 @@ app.post("/api/regenerate-ad", async (req, res) => {
       }
     }
 
+    // Composita el logo sobre la foto fuente para que el modelo lo vea como referencia visual
+    if (sourcePng && brand?.logo) {
+      try {
+        const logob64 = brand.logo.includes(",") ? brand.logo.split(",")[1] : brand.logo;
+        const srcMeta = await sharp(sourcePng).metadata();
+        const logoSize = Math.round(Math.min(srcMeta.width, srcMeta.height) * 0.18);
+        const resizedLogo = await sharp(Buffer.from(logob64, "base64"))
+          .resize(logoSize, logoSize, { fit: "contain", background: { r:0, g:0, b:0, alpha:0 } })
+          .png().toBuffer();
+        sourcePng = await sharp(sourcePng)
+          .composite([{ input: resizedLogo, gravity: "northeast", blend: "over" }])
+          .png().toBuffer();
+        console.log(`🖼  Logo compuesto (regenerate-ad, ${logoSize}px)`);
+      } catch (e) {
+        console.warn("⚠️  No se pudo compositar el logo:", e.message);
+      }
+    }
+
     const brandColors = brand?.primaryColors?.join(", ") || "use confident brand accents";
     const visualStyle = brand?.visualStyle || "modern, premium";
+    const hasLogo     = !!brand?.logo;
 
     // Si el usuario editó headline/subheadline/cta, los inyectamos en el prompt
     const overrides = [];
@@ -1145,7 +1184,7 @@ ${overrides.length ? `IMPORTANT — use these EXACT texts (do not rewrite):\n${o
 
 Brand color palette: ${brandColors}.
 Visual style: ${visualStyle}.
-Logo placement: top corner, small but visible.
+${hasLogo ? "IMPORTANT: The brand logo is visible in the top-right corner of the reference photo. You MUST reproduce this exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions." : ""}
 CTA: clearly visible, high contrast.
 Typography: clean, mobile-readable.
 The product from the source photo MUST be the visual hero of the composition.`;

@@ -246,7 +246,7 @@ const initialCampaignData = () => ({
   adAngles: [],
 });
 
-export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate, onSaveResult, onOpenEditor }) {
+export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate, onSaveResult }) {
   const [step, setStep]       = useState(initialStep);
   const [data, setData]       = useState(() => initialData ? { ...initialCampaignData(), ...initialData } : initialCampaignData());
   const [error, setError]     = useState(null);
@@ -326,7 +326,7 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
       {step === "form"       && <FormStep       data={data} update={update} setStep={setStep} />}
       {step === "logo"       && <LogoStep       data={data} update={update} updateBrand={updateBrand} setStep={setStep} setError={setError} />}
       {step === "generating" && <GeneratingStep data={data} update={update} setStep={setStep} setError={setError} />}
-      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} onSaveResult={onSaveResult} onOpenEditor={onOpenEditor} />}
+      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} onSaveResult={onSaveResult} />}
     </div>
   );
 }
@@ -926,7 +926,7 @@ function GeneratingStep({ data, update, setStep, setError }) {
 }
 
 // ───── PASO 6 — Resultados (1 o 5 artes) ─────────────────────────────────────
-function ResultsStep({ data, update, onExit, onSaveResult, onOpenEditor }) {
+function ResultsStep({ data, update, onExit, onSaveResult }) {
   const totalAds = (data.adAngles?.length) || 0;
   const updateAdAt = (i, patch) => {
     const next = data.adAngles.slice();
@@ -952,7 +952,6 @@ function ResultsStep({ data, update, onExit, onSaveResult, onOpenEditor }) {
             format={data.formats?.[0] || "1080x1920"}
             onUpdate={(patch) => updateAdAt(i, patch)}
             onSaveResult={onSaveResult}
-            onOpenEditor={onOpenEditor}
           />
         ))}
       </div>
@@ -962,7 +961,7 @@ function ResultsStep({ data, update, onExit, onSaveResult, onOpenEditor }) {
   );
 }
 
-function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult, onOpenEditor }) {
+function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult }) {
   const [editing, setEditing]       = useState(false);
   const [regenerating, setRegen]    = useState(false);
   const [regenError, setRegenError] = useState(null);
@@ -1091,15 +1090,7 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult,
           <>
             <Btn variant="ghost" small onClick={handleDownload} disabled={!ad.generatedImage || regenerating}>⬇ Descargar</Btn>
             <Btn variant="ghost" small onClick={() => setEditing(true)} disabled={regenerating}>✏️ Editar texto</Btn>
-            <Btn variant="ghost" small onClick={handleRegenerate} disabled={regenerating}>🔄 Regenerar</Btn>
-            <Btn
-              variant="premium"
-              small
-              onClick={() => onOpenEditor?.({ imageUrl: ad.generatedImage, resultId: null, title: ad.angleName || `Anuncio ${index + 1}` })}
-              disabled={!ad.generatedImage || regenerating}
-            >
-              🎨 Editar diseño
-            </Btn>
+            <Btn variant="ghost" small full onClick={handleRegenerate} disabled={regenerating}>🔄 Regenerar</Btn>
           </>
         ) : (
           <>

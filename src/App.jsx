@@ -15,29 +15,6 @@ import AccountSettings from "./AccountSettings";
 import CommunityView from "./CommunityView";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
-import { saveDesignEdit } from "./supabase";
-const DesignEditor = React.lazy(() => import("./DesignEditor"));
-
-class EditorErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(e) { return { error: e }; }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-[#070812] text-white gap-4 p-8">
-          <span className="text-4xl">⚠️</span>
-          <p className="text-lg font-black">El editor no pudo cargar</p>
-          <p className="text-sm text-white/50 text-center max-w-sm">{this.state.error?.message || "Error desconocido"}</p>
-          <button onClick={() => { this.setState({ error: null }); this.props.onClose?.(); }}
-            className="mt-2 rounded-xl bg-white/10 px-5 py-2 text-sm font-black hover:bg-white/20">
-            Cerrar
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1287,20 +1264,6 @@ function MainApp({ session }) {
   const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin | account | community
   const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
   const [chargeToast, setChargeToast]   = useState(null);
-  // Editor de diseño (Polotno) — state global de MainApp para abrirse desde
-  // cualquier vista (resultado de análisis, campaign card, saved result).
-  const [editor, setEditor] = useState({ open: false, imageUrl: null, resultId: null, title: null });
-  const openEditor  = useCallback((opts) => setEditor({ open: true, ...opts }), []);
-  const closeEditor = useCallback(() => setEditor({ open: false, imageUrl: null, resultId: null, title: null }), []);
-  const handleSavedDesign = useCallback(async ({ exportedDataUrl, polotnoJson, resultId }) => {
-    await saveDesignEdit({
-      resultId,
-      baseImageUrl:    editor.imageUrl,
-      polotnoJson,
-      exportedDataUrl,
-      title:           editor.title ? `${editor.title} (editado)` : "Diseño editado",
-    });
-  }, [editor.imageUrl, editor.title]);
   const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
 
   // Listener global: cuando un endpoint devuelve 402, abrimos el modal de créditos
@@ -1766,7 +1729,6 @@ function MainApp({ session }) {
               onSave={handleSaveCampaign}
               onUpdate={handleUpdateCampaign}
               onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
-              onOpenEditor={openEditor}
             />
           )}
           {view === "results"   && analysis && (
@@ -1776,7 +1738,6 @@ function MainApp({ session }) {
               imageFile={imageFile}
               formData={formData}
               onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
-              onOpenEditor={openEditor}
             />
           )}
           {view === "history" && (
@@ -1790,7 +1751,6 @@ function MainApp({ session }) {
               onDeleteCampaign={handleDeleteCampaign}
               onDeleteResult={handleDeleteResult}
               onReset={handleReset}
-              onOpenEditor={openEditor}
             />
           )}
           {view === "community" && <CommunityView session={session} isAdmin={isAdmin} />}
@@ -1824,27 +1784,6 @@ function MainApp({ session }) {
         </div>
       )}
 
-      {/* Editor visual por capas (Polotno) — fullscreen overlay */}
-      {editor.open && (
-        <EditorErrorBoundary onClose={closeEditor}>
-          <React.Suspense fallback={
-            <div className="fixed inset-0 z-[400] flex items-center justify-center bg-[#070812]">
-              <div className="flex flex-col items-center gap-3">
-                <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
-                <p className="text-sm text-white/50">Cargando editor…</p>
-              </div>
-            </div>
-          }>
-            <DesignEditor
-              open={editor.open}
-              baseImageUrl={editor.imageUrl}
-              resultId={editor.resultId}
-              onClose={closeEditor}
-              onSaved={handleSavedDesign}
-            />
-          </React.Suspense>
-        </EditorErrorBoundary>
-      )}
     </div>
   );
 }
