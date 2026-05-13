@@ -1766,6 +1766,109 @@ app.post("/api/stripe/create-checkout", async (req, res) => {
   res.json({ url: session.url });
 });
 
+// ── Extract Layers (AI layer separation for DesignEditor) ─────────────────────
+// Analiza la imagen con GPT-4o Vision y devuelve capas editables:
+// fondo, elementos de imagen, textos con posición/color/tamaño.
+app.post("/api/extract-layers", express.json(), async (req, res) => {
+  try {
+    const { imageUrl, canvasW = 1024, canvasH = 1024 } = req.body;
+    if (!imageUrl) return res.status(400).json({ error: "imageUrl requerida" });
+
+    const openai = getOpenAI();
+
+    // Descarga la imagen para pasarla como base64 (evita problemas CORS/SSRF con URLs externas)
+    let imageContent;
+    try {
+      const imgResp = await fetch(imageUrl);
+      if (!imgResp.ok) throw new Error("No se pudo descargar la imagen");
+      const imgBuf  = await imgResp.arrayBuffer();
+      const base64  = Buffer.from(imgBuf).toString("base64");
+      const mime    = imgResp.headers.get("content-type") || "image/png";
+      imageContent  = { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } };
+    } catch {
+      // Fallback: pasar la URL directa
+      imageContent = { type: "image_url", image_url: { url: imageUrl } };
+    }
+
+    const systemPrompt = `Eres un experto en diseño gráfico y análisis de imágenes publicitarias.
+Analiza la imagen y extrae TODOS los elementos visibles de forma estructurada.
+El canvas tiene dimensiones ${canvasW}x${canvasH} píxeles.
+
+Devuelve ÚNICAMENTE un JSON válido (sin markdown, sin explicaciones) con esta estructura exacta:
+{
+  "background": {
+    "type": "solid|gradient|image|pattern",
+    "color": "#hexcolor o null si es foto/imagen"
+  },
+  "texts": [
+    {
+      "content": "texto exacto visible",
+      "x_pct": 50,
+      "y_pct": 20,
+      "width_pct": 80,
+      "fontSize": 48,
+      "color": "#ffffff",
+      "bold": true,
+      "italic": false,
+      "align": "center",
+      "layer": "headline|subheadline|body|cta|label"
+    }
+  ],
+  "hasProduct": true,
+  "productRegion": { "x_pct": 20, "y_pct": 30, "width_pct": 60, "height_pct": 50 }
+}
+
+REGLAS:
+- x_pct e y_pct son el centro del elemento como % del canvas (0-100)
+- width_pct es el ancho del elemento como % del canvas (10-100)
+- fontSize en píxeles absolutos estimados (ej: titular grande ≈ 48-72, subtítulo ≈ 24-36, cuerpo ≈ 16-20, CTA ≈ 20-28)
+- Extrae TODO el texto visible, incluyendo precios, etiquetas, disclaimers
+- color en hex (#rrggbb)
+- Si el fondo es una foto o imagen compleja, type = "image" y color = null
+- hasProduct = true si hay un producto/persona/objeto principal separado del fondo
+- Ordena los textos de mayor a menor importancia visual`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: [
+          { type: "text", text: "Analiza esta imagen publicitaria y extrae todas las capas editables." },
+          imageContent,
+        ]},
+      ],
+      max_tokens: 2000,
+      temperature: 0.2,
+    });
+
+    let raw = completion.choices[0]?.message?.content?.trim() || "{}";
+    // Limpia markdown si GPT lo incluye igual
+    raw = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+
+    let layers;
+    try {
+      layers = JSON.parse(raw);
+    } catch {
+      return res.status(500).json({ error: "No se pudo parsear la respuesta de IA", raw });
+    }
+
+    // Convierte posiciones % → px usando las dimensiones del canvas
+    if (Array.isArray(layers.texts)) {
+      layers.texts = layers.texts.map((t) => ({
+        ...t,
+        x_px:     Math.round((t.x_pct / 100) * canvasW - ((t.width_pct / 100) * canvasW) / 2),
+        y_px:     Math.round((t.y_pct / 100) * canvasH - (t.fontSize * 1.5) / 2),
+        width_px: Math.round((t.width_pct / 100) * canvasW),
+      }));
+    }
+
+    res.json({ ok: true, canvasW, canvasH, ...layers });
+  } catch (err) {
+    console.error("[extract-layers]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🐼 Panda AdLab API → http://localhost:${PORT}`);
