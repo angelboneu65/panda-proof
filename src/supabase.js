@@ -309,6 +309,59 @@ export async function sendPasswordReset(email) {
   if (error) throw error;
 }
 
+// ── Design Edits (Polotno) ────────────────────────────────────────────────────
+// Guarda una versión editada de un saved_result (capa por capa).
+// La imagen exportada se sube al bucket "avatars" (reutilizamos el storage
+// que ya tiene RLS configurado) o se mantiene como dataURL si falla la subida.
+export async function saveDesignEdit({ resultId = null, baseImageUrl, polotnoJson, exportedDataUrl, title = null }) {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Intenta subir el PNG exportado al storage (bucket avatars ya existe + RLS OK)
+  let exportedUrl = null;
+  if (exportedDataUrl && typeof exportedDataUrl === "string" && exportedDataUrl.startsWith("data:")) {
+    try {
+      const blob = await (await fetch(exportedDataUrl)).blob();
+      const path = `${user.id}/edits/${Date.now()}.png`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, blob, { upsert: true, contentType: "image/png" });
+      if (!upErr) {
+        const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+        exportedUrl = data.publicUrl;
+      }
+    } catch (e) {
+      console.warn("[saveDesignEdit] upload failed, fallback to dataURL:", e.message);
+    }
+  }
+
+  const row = {
+    user_id:            user.id,
+    result_id:          resultId,
+    base_image_url:     baseImageUrl || null,
+    polotno_json:       polotnoJson || null,
+    exported_image_url: exportedUrl || exportedDataUrl || null,
+    title:              title || "Diseño editado",
+  };
+
+  const { data, error } = await supabase.from("design_edits").insert(row).select().single();
+  if (error) {
+    console.error("[saveDesignEdit]:", error.message);
+    return null;
+  }
+  return data;
+}
+
+export async function listDesignEdits(resultId = null) {
+  if (!supabase) return [];
+  let q = supabase.from("design_edits").select("*").order("created_at", { ascending: false }).limit(50);
+  if (resultId) q = q.eq("result_id", resultId);
+  const { data, error } = await q;
+  if (error) { console.error("listDesignEdits:", error.message); return []; }
+  return data || [];
+}
+
 // Convert DB row → app analysis shape
 export function rowToAnalysis(row) {
   return {

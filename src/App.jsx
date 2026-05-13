@@ -15,6 +15,8 @@ import AccountSettings from "./AccountSettings";
 import CommunityView from "./CommunityView";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
+import DesignEditor from "./DesignEditor";
+import { saveDesignEdit } from "./supabase";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -590,7 +592,7 @@ function AnalyzingView() {
 // ══════════════════════════════════════════════════════════════════════════════
 // RESULTS VIEW
 // ══════════════════════════════════════════════════════════════════════════════
-function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
+function ResultsView({ analysis, preview, imageFile, formData, onSaveResult, onOpenEditor }) {
   // Destructure FIRST so all variables are available to hooks below
   const {
     pandaScore            = 0,
@@ -621,7 +623,6 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
   const [showDetails,    setShowDetails]    = useState(false);
   const [showCreateAnother, setShowCreateAnother] = useState(false);
   const [savedId,        setSavedId]        = useState(null);
-  const [copiedPrompt,   setCopiedPrompt]   = useState(false);
 
   // Re-populate textarea if a different analysis is loaded (e.g. from history)
   useEffect(() => {
@@ -722,14 +723,6 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
       relatedAnalysisId: analysisId,
     });
     if (id) setSavedId(id);
-  };
-
-  const handleCopyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(customPrompt || regenerationPrompt || "");
-      setCopiedPrompt(true);
-      setTimeout(() => setCopiedPrompt(false), 2000);
-    } catch (e) { /* ignore */ }
   };
 
   // Reset state when starting a new generation
@@ -887,8 +880,8 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult }) {
 
           {/* Secondary row */}
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Btn variant="ghost" full onClick={handleCopyPrompt}>
-              {copiedPrompt ? "✓ Copiado" : "📋 Copiar prompt"}
+            <Btn variant="premium" full onClick={() => onOpenEditor?.({ imageUrl: generatedImage, resultId: savedId || null, title: formData?.producto || "Arte optimizado" })}>
+              🎨 Editar diseño
             </Btn>
             <Btn variant="ghost" full onClick={() => setShowCreateAnother((v) => !v)}>
               🔄 Crear otra versión
@@ -1052,7 +1045,7 @@ function HistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
-function SavedResultCard({ row, onDelete }) {
+function SavedResultCard({ row, onDelete, onOpenEditor }) {
   const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
@@ -1084,6 +1077,15 @@ function SavedResultCard({ row, onDelete }) {
       <p className="mt-1.5 text-[14px] font-bold leading-snug text-white/90 break-words">
         {row.title || "Arte optimizado"}
       </p>
+
+      {row.image_url && onOpenEditor && (
+        <button
+          onClick={() => onOpenEditor({ imageUrl: row.image_url, resultId: row.id, title: row.title || "Arte" })}
+          className="mt-3 w-full rounded-xl border border-purple-400/30 bg-gradient-to-r from-purple-500/15 via-pink-500/10 to-cyan-500/15 px-3 py-2 text-[12px] font-black text-white hover:brightness-110"
+        >
+          🎨 Editar diseño
+        </button>
+      )}
     </div>
   );
 }
@@ -1121,7 +1123,7 @@ function CampaignHistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
-function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset }) {
+function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset, onOpenEditor }) {
   const totalCount = history.length + campaigns.length + (savedResults?.length || 0);
   const recentResults = (savedResults || []).slice(0, 3);
 
@@ -1169,7 +1171,7 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {recentResults.map((row) => (
-              <SavedResultCard key={row.id} row={row} onDelete={onDeleteResult} />
+              <SavedResultCard key={row.id} row={row} onDelete={onDeleteResult} onOpenEditor={onOpenEditor} />
             ))}
           </div>
           {savedResults.length > 3 && (
@@ -1264,6 +1266,20 @@ function MainApp({ session }) {
   const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin | account | community
   const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
   const [chargeToast, setChargeToast]   = useState(null);
+  // Editor de diseño (Polotno) — state global de MainApp para abrirse desde
+  // cualquier vista (resultado de análisis, campaign card, saved result).
+  const [editor, setEditor] = useState({ open: false, imageUrl: null, resultId: null, title: null });
+  const openEditor  = useCallback((opts) => setEditor({ open: true, ...opts }), []);
+  const closeEditor = useCallback(() => setEditor({ open: false, imageUrl: null, resultId: null, title: null }), []);
+  const handleSavedDesign = useCallback(async ({ exportedDataUrl, polotnoJson, resultId }) => {
+    await saveDesignEdit({
+      resultId,
+      baseImageUrl:    editor.imageUrl,
+      polotnoJson,
+      exportedDataUrl,
+      title:           editor.title ? `${editor.title} (editado)` : "Diseño editado",
+    });
+  }, [editor.imageUrl, editor.title]);
   const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
 
   // Listener global: cuando un endpoint devuelve 402, abrimos el modal de créditos
@@ -1729,6 +1745,7 @@ function MainApp({ session }) {
               onSave={handleSaveCampaign}
               onUpdate={handleUpdateCampaign}
               onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
+              onOpenEditor={openEditor}
             />
           )}
           {view === "results"   && analysis && (
@@ -1738,6 +1755,7 @@ function MainApp({ session }) {
               imageFile={imageFile}
               formData={formData}
               onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
+              onOpenEditor={openEditor}
             />
           )}
           {view === "history" && (
@@ -1751,6 +1769,7 @@ function MainApp({ session }) {
               onDeleteCampaign={handleDeleteCampaign}
               onDeleteResult={handleDeleteResult}
               onReset={handleReset}
+              onOpenEditor={openEditor}
             />
           )}
           {view === "community" && <CommunityView session={session} isAdmin={isAdmin} />}
@@ -1783,6 +1802,15 @@ function MainApp({ session }) {
           💳 {chargeToast}
         </div>
       )}
+
+      {/* Editor visual por capas (Polotno) — fullscreen overlay */}
+      <DesignEditor
+        open={editor.open}
+        baseImageUrl={editor.imageUrl}
+        resultId={editor.resultId}
+        onClose={closeEditor}
+        onSaved={handleSavedDesign}
+      />
     </div>
   );
 }

@@ -246,7 +246,7 @@ const initialCampaignData = () => ({
   adAngles: [],
 });
 
-export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate, onSaveResult }) {
+export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate, onSaveResult, onOpenEditor }) {
   const [step, setStep]       = useState(initialStep);
   const [data, setData]       = useState(() => initialData ? { ...initialCampaignData(), ...initialData } : initialCampaignData());
   const [error, setError]     = useState(null);
@@ -326,7 +326,7 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
       {step === "form"       && <FormStep       data={data} update={update} setStep={setStep} />}
       {step === "logo"       && <LogoStep       data={data} update={update} updateBrand={updateBrand} setStep={setStep} setError={setError} />}
       {step === "generating" && <GeneratingStep data={data} update={update} setStep={setStep} setError={setError} />}
-      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} onSaveResult={onSaveResult} />}
+      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} onSaveResult={onSaveResult} onOpenEditor={onOpenEditor} />}
     </div>
   );
 }
@@ -926,7 +926,7 @@ function GeneratingStep({ data, update, setStep, setError }) {
 }
 
 // ───── PASO 6 — Resultados (1 o 5 artes) ─────────────────────────────────────
-function ResultsStep({ data, update, onExit, onSaveResult }) {
+function ResultsStep({ data, update, onExit, onSaveResult, onOpenEditor }) {
   const totalAds = (data.adAngles?.length) || 0;
   const updateAdAt = (i, patch) => {
     const next = data.adAngles.slice();
@@ -952,6 +952,7 @@ function ResultsStep({ data, update, onExit, onSaveResult }) {
             format={data.formats?.[0] || "1080x1920"}
             onUpdate={(patch) => updateAdAt(i, patch)}
             onSaveResult={onSaveResult}
+            onOpenEditor={onOpenEditor}
           />
         ))}
       </div>
@@ -961,9 +962,8 @@ function ResultsStep({ data, update, onExit, onSaveResult }) {
   );
 }
 
-function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult }) {
+function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult, onOpenEditor }) {
   const [editing, setEditing]       = useState(false);
-  const [showPrompt, setShowPrompt] = useState(false);
   const [regenerating, setRegen]    = useState(false);
   const [regenError, setRegenError] = useState(null);
 
@@ -977,10 +977,6 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult 
     a.href     = ad.generatedImage;
     a.download = `panda-${(ad.angleName || "ad").toLowerCase().replace(/\s+/g, "-")}-${index + 1}.png`;
     a.click();
-  };
-
-  const handleCopyPrompt = async () => {
-    try { await navigator.clipboard.writeText(ad.generationPrompt || ""); } catch (e) { /* ignore */ }
   };
 
   const handleSaveEdits = () => {
@@ -1096,7 +1092,14 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult 
             <Btn variant="ghost" small onClick={handleDownload} disabled={!ad.generatedImage || regenerating}>⬇ Descargar</Btn>
             <Btn variant="ghost" small onClick={() => setEditing(true)} disabled={regenerating}>✏️ Editar texto</Btn>
             <Btn variant="ghost" small onClick={handleRegenerate} disabled={regenerating}>🔄 Regenerar</Btn>
-            <Btn variant="ghost" small onClick={handleCopyPrompt} disabled={!ad.generationPrompt}>📋 Copiar prompt</Btn>
+            <Btn
+              variant="premium"
+              small
+              onClick={() => onOpenEditor?.({ imageUrl: ad.generatedImage, resultId: null, title: ad.angleName || `Anuncio ${index + 1}` })}
+              disabled={!ad.generatedImage || regenerating}
+            >
+              🎨 Editar diseño
+            </Btn>
           </>
         ) : (
           <>
@@ -1110,10 +1113,6 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult 
           </>
         )}
       </div>
-
-      {showPrompt && ad.generationPrompt && (
-        <p className="mt-2 max-h-32 overflow-y-auto rounded-lg bg-black/30 p-2 text-[10px] text-white/40">{ad.generationPrompt}</p>
-      )}
     </div>
   );
 }
