@@ -253,13 +253,45 @@ export async function changePassword(newPassword) {
   if (error) throw error;
 }
 
+/**
+ * Devuelve el origen al que debe redirigir el usuario al volver de OAuth/recovery.
+ *
+ * Prioridad:
+ *   1. VITE_APP_URL si está seteada en build (override explícito por entorno)
+ *   2. window.location.origin (dinámico: funciona en Netlify, previews y dev)
+ *
+ * Nunca devuelve "localhost" en producción porque window.location.origin
+ * SIEMPRE refleja el dominio donde corre el bundle actualmente.
+ *
+ * IMPORTANTE: Esta URL debe estar en la lista de "Redirect URLs" del proyecto
+ * Supabase (Authentication → URL Configuration), de lo contrario Supabase
+ * caerá silenciosamente al "Site URL" — si ese estaba en localhost,
+ * el usuario se quedaba viendo localhost después del login.
+ */
+export function getAppOrigin() {
+  const fromEnv = import.meta.env?.VITE_APP_URL;
+  if (fromEnv && typeof fromEnv === "string" && fromEnv.startsWith("http")) {
+    return fromEnv.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
+  return "";
+}
+
 /** Inicia sesión con Google OAuth (redirige a Google y vuelve a la app) */
 export async function signInWithGoogle() {
   if (!supabase) throw new Error("Supabase no configurado");
+  const origin = getAppOrigin();
+  if (!origin || origin.includes("localhost")) {
+    // En producción nunca debería ser localhost. Logueamos por si el bundle
+    // queda corriendo en algún entorno sin ventana real (Capacitor, etc).
+    console.warn("[auth] getAppOrigin devolvió un valor sospechoso:", origin);
+  }
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: window.location.origin,
+      redirectTo: origin,
       queryParams: { access_type: "offline", prompt: "consent" },
     },
   });
@@ -270,8 +302,9 @@ export async function signInWithGoogle() {
 /** Envía un correo con enlace para restablecer la contraseña */
 export async function sendPasswordReset(email) {
   if (!supabase) throw new Error("Supabase no configurado");
+  const origin = getAppOrigin();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/?recovery=1`,
+    redirectTo: `${origin}/?recovery=1`,
   });
   if (error) throw error;
 }
