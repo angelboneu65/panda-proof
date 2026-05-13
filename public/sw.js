@@ -1,5 +1,5 @@
 // Panda AdLab — Service Worker
-const CACHE = "panda-adlab-v4";
+const CACHE = "panda-adlab-v5";
 
 const SHELL = [
   "/",
