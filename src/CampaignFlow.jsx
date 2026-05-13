@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { BRAND } from "./brand";
+import { CREDIT_COSTS } from "./config/credits";
 
 import { authedFetch } from "./api";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -189,7 +190,7 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
           </div>
           <h3 className="text-2xl font-black leading-tight">Foto a Campaña</h3>
           <p className="mt-2 text-sm leading-relaxed text-white/60">
-            Toma una foto de un producto, servicio u objeto. {BRAND.appName} detecta el nicho, sugiere precio competitivo y crea 5 anuncios usando tu logo como guía visual.
+            Toma una foto de un producto, servicio u objeto. {BRAND.appName} detecta el nicho, sugiere precio competitivo y genera 1 o 5 anuncios usando tu logo como guía visual.
           </p>
 
           <div className="mt-5 grid grid-cols-2 gap-2">
@@ -197,7 +198,7 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
             <Badge icon="💰" label="Precio sugerido" />
             <Badge icon="📊" label="Competencia local" />
             <Badge icon="🎨" label="Logo como guía" />
-            <Badge icon="✨" label="5 artes listos" />
+            <Badge icon="✨" label="1 o 5 artes" />
           </div>
 
           <div className="mt-5">
@@ -241,6 +242,7 @@ const initialCampaignData = () => ({
     suggestedTypography: "",
   },
   formats: ["1080x1920"],
+  adCount: 5, // 1 = modo rápido (1 arte), 5 = campaña completa (5 artes)
   adAngles: [],
 });
 
@@ -349,7 +351,7 @@ function PhotoStep({ data, update, setStep, setError }) {
       <h2 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">
         Convierte una foto en{" "}
         <span className="bg-gradient-to-r from-pink-400 via-purple-300 to-cyan-400 bg-clip-text text-transparent">
-          5 anuncios listos para vender
+          anuncios listos para vender
         </span>
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/50">
@@ -763,33 +765,84 @@ function LogoStep({ data, update, updateBrand, setStep, setError }) {
 
         {currentFormat === "both" && (
           <p className="mt-3 text-[11px] text-white/35">
-            ⚠️ "Ambos" duplica el costo y tiempo de generación (10 imágenes en vez de 5).
+            ⚠️ "Ambos" duplica el tiempo de generación (genera el mismo arte en dos formatos).
           </p>
         )}
+      </section>
+
+      {/* ── ¿Cuántos anuncios quieres crear? ─────────────────────────────── */}
+      <section className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+        <h3 className="text-lg font-black">¿Cuántos anuncios quieres crear?</h3>
+        <p className="mt-1 text-xs text-white/40">Modo rápido para una idea o campaña completa con 5 ángulos distintos.</p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {[
+            { count: 1, title: "Modo rápido", subtitle: "1 anuncio", desc: "Un solo arte enfocado en tu producto.", cost: CREDIT_COSTS.generateSinglePhotoAd },
+            { count: 5, title: "Campaña completa", subtitle: "5 anuncios", desc: "5 artes con ángulos estratégicos distintos.", cost: CREDIT_COSTS.generateFivePhotoAds, recommended: true },
+          ].map((opt) => {
+            const active = (data.adCount || 5) === opt.count;
+            return (
+              <button
+                key={opt.count}
+                onClick={() => update({ adCount: opt.count })}
+                className={`relative rounded-2xl border p-4 text-left transition ${
+                  active
+                    ? "border-purple-400/60 bg-gradient-to-br from-purple-500/20 via-pink-500/10 to-cyan-500/10 shadow-lg shadow-purple-500/10"
+                    : "border-white/10 bg-white/[0.02] hover:border-white/25"
+                }`}
+              >
+                {opt.recommended && (
+                  <span className="absolute right-3 top-3 rounded-full bg-gradient-to-r from-pink-500 to-cyan-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                    Recomendado
+                  </span>
+                )}
+                <p className="text-[11px] font-black uppercase tracking-widest text-white/40">{opt.title}</p>
+                <p className="mt-1 text-lg font-black">{opt.subtitle}</p>
+                <p className="mt-1 text-[12px] leading-snug text-white/55">{opt.desc}</p>
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-white/8 px-2.5 py-1 text-[11px] font-bold text-white/80">
+                  <span className="text-cyan-300">●</span>
+                  {opt.cost} créditos
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Btn variant="ghost" full onClick={() => setStep("form")}>← Volver al formulario</Btn>
         <Btn variant="premium" full disabled={!data.brand.logo} onClick={() => setStep("generating")}>
-          Generar mis 5 anuncios →
+          {(data.adCount || 5) === 1
+            ? `Generar 1 anuncio — ${CREDIT_COSTS.generateSinglePhotoAd} créditos →`
+            : `Generar 5 anuncios — ${CREDIT_COSTS.generateFivePhotoAds} créditos →`}
         </Btn>
       </div>
     </div>
   );
 }
 
-// ───── PASO 5 — Generando 5 anuncios ──────────────────────────────────────────
+// ───── PASO 5 — Generando anuncios ─────────────────────────────────────────
 function GeneratingStep({ data, update, setStep, setError }) {
   const [progress, setProgress] = useState(0);
   const [tick, setTick] = useState(0);
-  const steps = [
-    "Definiendo los 5 ángulos publicitarios para tu nicho…",
-    "Construyendo headlines y CTAs adaptados a tu producto…",
-    "Aplicando colores y estilo de tu marca…",
-    "Generando los 5 artes en paralelo…",
-    "Optimizando legibilidad móvil…",
-    "Toques finales de calidad…",
-  ];
+  const count = data.adCount === 1 ? 1 : 5;
+  const steps = count === 1
+    ? [
+        "Definiendo el ángulo publicitario más fuerte para tu producto…",
+        "Construyendo headline y CTA…",
+        "Aplicando colores y estilo de tu marca…",
+        "Generando el arte…",
+        "Optimizando legibilidad móvil…",
+        "Toques finales de calidad…",
+      ]
+    : [
+        "Definiendo los 5 ángulos publicitarios para tu nicho…",
+        "Construyendo headlines y CTAs adaptados a tu producto…",
+        "Aplicando colores y estilo de tu marca…",
+        "Generando los 5 artes en paralelo…",
+        "Optimizando legibilidad móvil…",
+        "Toques finales de calidad…",
+      ];
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => (t + 1) % steps.length), 2200);
@@ -814,6 +867,7 @@ function GeneratingStep({ data, update, setStep, setError }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            count, // 1 o 5
             productName: data.productName,
             niche: data.detectedNiche,
             shortDescription: data.shortDescription,
@@ -864,15 +918,16 @@ function GeneratingStep({ data, update, setStep, setError }) {
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" />
           Color Panda Media Lab is working
         </div>
-        <h2 className="text-xl font-black sm:text-3xl">Generando tus 5 anuncios</h2>
+        <h2 className="text-xl font-black sm:text-3xl">{count === 1 ? "Generando tu anuncio" : "Generando tus 5 anuncios"}</h2>
         <p className="mt-3 min-h-[3rem] text-sm leading-relaxed text-white/50">{steps[tick]}</p>
       </div>
     </div>
   );
 }
 
-// ───── PASO 6 — Resultados (5 artes) ──────────────────────────────────────────
+// ───── PASO 6 — Resultados (1 o 5 artes) ─────────────────────────────────────
 function ResultsStep({ data, update, onExit, onSaveResult }) {
+  const totalAds = (data.adAngles?.length) || 0;
   const updateAdAt = (i, patch) => {
     const next = data.adAngles.slice();
     next[i] = { ...next[i], ...patch };
@@ -882,8 +937,8 @@ function ResultsStep({ data, update, onExit, onSaveResult }) {
   return (
     <div className="space-y-5">
       <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
-        <h2 className="text-2xl font-black sm:text-3xl">Tus 5 anuncios listos</h2>
-        <p className="mt-2 text-sm text-white/55">Cada arte tiene un ángulo estratégico distinto. Edita el texto, regenera o descarga.</p>
+        <h2 className="text-2xl font-black sm:text-3xl">{totalAds === 1 ? "Tu anuncio listo" : `Tus ${totalAds} anuncios listos`}</h2>
+        <p className="mt-2 text-sm text-white/55">{totalAds === 1 ? "Edita el texto, regenera o descarga." : "Cada arte tiene un ángulo estratégico distinto. Edita el texto, regenera o descarga."}</p>
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

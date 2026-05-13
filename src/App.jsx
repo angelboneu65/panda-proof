@@ -1277,7 +1277,7 @@ function MainApp({ session }) {
     onCreditCharge((info) => {
       refreshProfile();
       const label =
-        info.type === "round"      ? `Se descontó 1 ronda de imágenes.`
+        info.type === "round"      ? `Se descontaron ${info.charged ?? 5} créditos.` // legacy compat
       : info.type === "credits"    ? `Se descontaron ${info.charged} créditos.`
       : info.type === "unlimited"  ? null  // admin/unlimited no muestra toast
                                    : `Cobro registrado.`;
@@ -1643,7 +1643,7 @@ function MainApp({ session }) {
                 ) : (
                   <>
                     <p className="mt-2 text-[24px] font-black leading-none">{profile.credits_balance}</p>
-                    <p className="text-[11px] text-white/55">créditos · {profile.image_rounds_balance} rondas</p>
+                    <p className="text-[11px] text-white/55">créditos disponibles</p>
                     <p className="mt-1 text-[10px] text-white/40">Plan: {profile.plan}</p>
                     <button
                       onClick={() => setCreditsModal({ open: true, info: null })}

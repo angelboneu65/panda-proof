@@ -313,7 +313,7 @@ function PlanSection({ profile, onOpenCredits }) {
   return (
     <SectionCard title="Tu plan y créditos" subtitle="Resumen de tu cuenta actual.">
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-purple-400/20 bg-purple-400/10 p-3 text-center">
             <p className="text-[10px] font-black uppercase tracking-widest text-purple-200">Plan</p>
             <p className="mt-1 text-lg font-black text-white">{planLabel}</p>
@@ -324,19 +324,19 @@ function PlanSection({ profile, onOpenCredits }) {
               {profile.is_unlimited ? "∞" : profile.credits_balance}
             </p>
           </div>
-          <div className="rounded-2xl border border-pink-400/20 bg-pink-400/10 p-3 text-center col-span-2 sm:col-span-1">
-            <p className="text-[10px] font-black uppercase tracking-widest text-pink-200">Rondas</p>
-            <p className="mt-1 text-lg font-black text-white">
-              {profile.is_unlimited ? "∞" : profile.image_rounds_balance}
-            </p>
-          </div>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.06] p-3 text-[12px] text-emerald-200/90">
+          ✨ <strong>AdChat IA incluido</strong> — copies y mensajes sin gastar créditos
         </div>
 
         <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-sm text-white/55 space-y-1">
+          <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-white/40">Consumo por acción</p>
           <p>💳 <strong className="text-white/70">Análisis Panda Score</strong> — 5 créditos</p>
           <p>🎨 <strong className="text-white/70">Generar arte optimizado</strong> — 5 créditos</p>
-          <p>🖼️ <strong className="text-white/70">Regenerar 1 anuncio</strong> — 5 créditos</p>
-          <p>📷 <strong className="text-white/70">Foto a Campaña (5 ads)</strong> — 1 ronda ó 25 créditos</p>
+          <p>🖼️ <strong className="text-white/70">Crear otra versión</strong> — 5 créditos</p>
+          <p>📷 <strong className="text-white/70">Foto a Campaña (1 arte)</strong> — 5 créditos</p>
+          <p>📷 <strong className="text-white/70">Foto a Campaña (5 artes)</strong> — 20 créditos</p>
         </div>
 
         {!profile.is_unlimited && (
@@ -371,8 +371,9 @@ function TransactionsSection() {
 
   const fmt = (amount, type) => {
     const abs = Math.abs(amount);
-    if (type === "round_debit")   return `−1 ronda`;
-    if (type === "round_credit")  return `+1 ronda`;
+    // Compat: transacciones viejas de rondas las mostramos como créditos equivalentes
+    if (type === "round_debit")   return `−5 cr.`;
+    if (type === "round_credit")  return `+5 cr.`;
     if (amount < 0) return `-${abs} cr.`;
     return `+${abs} cr.`;
   };

@@ -66,13 +66,32 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-10-28.acacia" })
   : null;
 
+// ── Stripe Price ID mapping (slugs → live price IDs en Render env) ──────────
+// Mantener en sync con src/config/credits.js. Si agregas un slug en credits.js,
+// también agrégalo acá y crea la variable en Render.
 const STRIPE_PRICE_MAP = {
-  basic:             process.env.STRIPE_BASIC_PRICE_ID,
-  pro:               process.env.STRIPE_PRO_PRICE_ID,
-  "pack-1-round":    process.env.STRIPE_EXTRA_ROUND_PRICE_ID,
-  "pack-5-rounds":   process.env.STRIPE_EXTRA_5_ROUNDS_PRICE_ID,
-  "pack-50-credits": process.env.STRIPE_50_CREDITS_PRICE_ID,
-  "pack-150-credits":process.env.STRIPE_150_CREDITS_PRICE_ID,
+  // Suscripciones
+  basic:        process.env.STRIPE_BASIC_PRICE_ID,
+  pro:          process.env.STRIPE_PRO_PRICE_ID,
+  // Recargas de créditos (compras únicas)
+  "pack-100":   process.env.STRIPE_PACK_100_PRICE_ID,
+  "pack-250":   process.env.STRIPE_PACK_250_PRICE_ID,
+  "pack-600":   process.env.STRIPE_PACK_600_PRICE_ID,
+  "pack-1500":  process.env.STRIPE_PACK_1500_PRICE_ID,
+  // Legacy (compat con productos viejos antes del refactor — pueden archivarse en Stripe)
+  "pack-50-credits":  process.env.STRIPE_50_CREDITS_PRICE_ID,
+  "pack-150-credits": process.env.STRIPE_150_CREDITS_PRICE_ID,
+};
+
+// ── COSTOS DE CRÉDITOS POR ACCIÓN (espejo de src/config/credits.js) ──────────
+// Mantener en sync. Toda acción de cobro pasa por acá.
+const CREDIT_COSTS = {
+  adAnalysis:              5,
+  optimizeDesign:          5,
+  createAnotherVersion:    5,
+  photoCampaignAnalysis:   0,
+  generateSinglePhotoAd:   5,
+  generateFivePhotoAds:    20,
 };
 
 // IMPORTANTE: el webhook DEBE registrarse ANTES de express.json() para que el
@@ -233,16 +252,6 @@ async function consumeCredits(userId, amount, actionType, description, metadata 
   if (!data?.allowed) return { allowed: false, info: data };
   return { allowed: true, tx_id: data.transaction_id, info: data };
 }
-async function consumeImageRoundOrCredits(userId, creditCost, description, metadata = {}) {
-  if (!creditsEnabled) return { allowed: true, tx_id: null, skipped: true };
-  const { data, error } = await supabaseAdmin.rpc("consume_image_round_or_credits", {
-    p_user_id: userId, p_credit_cost: creditCost,
-    p_description: description, p_metadata: metadata,
-  });
-  if (error) return { allowed: false, error: error.message };
-  if (!data?.allowed) return { allowed: false, info: data };
-  return { allowed: true, tx_id: data.transaction_id, info: data };
-}
 async function refundTransaction(txId, reason) {
   if (!creditsEnabled || !txId) return;
   try { await supabaseAdmin.rpc("refund_transaction", { p_tx_id: txId, p_reason: reason }); }
@@ -253,9 +262,8 @@ async function refundTransaction(txId, reason) {
 function send402(res, info) {
   res.status(402).json({
     error: "insufficient_credits",
-    reason: info?.reason || "Sin créditos suficientes",
+    reason: info?.reason || "No tienes suficientes créditos",
     credits_balance: info?.credits_balance ?? 0,
-    rounds_balance:  info?.rounds_balance  ?? 0,
     required:        info?.required_credits ?? info?.required ?? 0,
   });
 }
@@ -541,7 +549,7 @@ app.post("/api/analyze", upload.single("image"), async (req, res) => {
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para analizar." });
   let charge_tx = null;
   if (creditsEnabled) {
-    const check = await consumeCredits(req.user.id, 5, "ad_analysis", "Análisis Panda Score (Opus)", { endpoint: "analyze" });
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.adAnalysis, "ad_analysis", "Análisis Panda Score (Opus)", { endpoint: "analyze" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
   }
@@ -676,7 +684,7 @@ app.post("/api/generate", upload.single("image"), async (req, res) => {
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar." });
   let charge_tx = null;
   if (creditsEnabled) {
-    const check = await consumeCredits(req.user.id, 5, "image_generation", "Regenerar arte optimizado", { endpoint: "generate" });
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.optimizeDesign, "image_generation", "Generar arte optimizado", { endpoint: "generate" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
   }
@@ -852,13 +860,23 @@ Estima los hex de los colores con precisión. Responde los strings en español.`
   }
 });
 
-// 3) Genera 5 anuncios diferentes en paralelo
+// 3) Genera N anuncios diferentes en paralelo (N=1 o N=5)
 app.post("/api/generate-campaign", async (req, res) => {
-  // Créditos: campaña de 5 artes = 1 ronda OR 100 créditos
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar campañas." });
+
+  // Resuelve cuántos anuncios va a generar el usuario (1 o 5)
+  const requestedCount = Number(req.body?.count);
+  const adCount = requestedCount === 1 ? 1 : 5; // default 5 si no se especifica o es inválido
+  const cost = adCount === 1
+    ? CREDIT_COSTS.generateSinglePhotoAd
+    : CREDIT_COSTS.generateFivePhotoAds;
+  const description = adCount === 1
+    ? "Foto a Campaña — 1 anuncio"
+    : "Foto a Campaña — 5 anuncios";
+
   let charge_tx = null, chargeInfo = null;
   if (creditsEnabled) {
-    const check = await consumeImageRoundOrCredits(req.user.id, 25, "Foto a Campaña — 5 anuncios", { endpoint: "generate-campaign" });
+    const check = await consumeCredits(req.user.id, cost, "image_generation", description, { endpoint: "generate-campaign", count: adCount });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
     chargeInfo = check.info;
@@ -930,7 +948,7 @@ Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
 
     console.log(`🎯 Estrategia generada: ${adAngles.length} ángulos`);
 
-    // ── Paso 2: Genera las 5 imágenes en paralelo con gpt-image-2 ─────────────
+    // ── Paso 2: Genera N imágenes en paralelo (N = adCount, 1 o 5) ───────────
     const openai = getOpenAI();
     const format = (data.formats && data.formats[0]) || "1080x1920";
     const size   = format === "1080x1920" ? "1024x1536" : (format === "1080x1080" ? "1024x1024" : "1024x1024");
@@ -948,8 +966,9 @@ Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
     const brandColors  = data.brand?.primaryColors?.join(", ") || "use confident brand accents";
     const visualStyle  = data.brand?.visualStyle || "modern, premium";
 
+    // Toma sólo los primeros adCount ángulos (1 o 5)
     const generations = await Promise.allSettled(
-      adAngles.slice(0, 5).map(async (angle) => {
+      adAngles.slice(0, adCount).map(async (angle) => {
         try {
           const fullPrompt = `${angle.generationPrompt}
 
@@ -995,7 +1014,7 @@ The product from the source photo MUST be the visual hero of the composition.`;
       return res.status(500).json({ error: "No se pudo generar ninguna imagen.", adAngles: results });
     }
 
-    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: "campaign" }));
+    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: `campaign_${adCount}` }));
     res.json({ success: true, adAngles: results, credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined });
   } catch (err) {
     console.error("❌ generate-campaign:", err.message);
@@ -1087,7 +1106,7 @@ app.post("/api/regenerate-ad", async (req, res) => {
   if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para regenerar." });
   let charge_tx = null;
   if (creditsEnabled) {
-    const check = await consumeCredits(req.user.id, 5, "image_generation", "Regenerar 1 anuncio", { endpoint: "regenerate-ad" });
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.createAnotherVersion, "image_generation", "Regenerar 1 anuncio", { endpoint: "regenerate-ad" });
     if (!check.allowed) return send402(res, check.info);
     charge_tx = check.tx_id;
   }
@@ -1651,20 +1670,23 @@ app.post("/api/admin/update-user", async (req, res) => {
         });
         return res.json({ success: true, new_balance: newBal });
       }
+      // grant_rounds: deprecated (rondas eliminadas). Convertido a créditos equivalentes:
+      // 1 ronda = 5 créditos (consumo aproximado de 1 imagen)
       case "grant_rounds": {
         if (!Number.isFinite(amount)) return res.status(400).json({ error: "amount inválido" });
+        const equivalentCredits = amount * 5;
         const { data: p, error } = await supabaseAdmin
-          .from("profiles").select("image_rounds_balance").eq("id", user_id).single();
+          .from("profiles").select("credits_balance").eq("id", user_id).single();
         if (error || !p) return res.status(404).json({ error: "Usuario no encontrado" });
-        const newBal = (p.image_rounds_balance || 0) + amount;
-        await supabaseAdmin.from("profiles").update({ image_rounds_balance: newBal, updated_at: new Date().toISOString() }).eq("id", user_id);
+        const newBal = (p.credits_balance || 0) + equivalentCredits;
+        await supabaseAdmin.from("profiles").update({ credits_balance: newBal, updated_at: new Date().toISOString() }).eq("id", user_id);
         await supabaseAdmin.from("credit_transactions").insert({
-          user_id, amount,
-          transaction_type: amount >= 0 ? "admin_grant" : "admin_remove",
-          description: description || `Admin ajustó ${amount > 0 ? "+" : ""}${amount} rondas`,
-          created_by: req.user.id, metadata: { unit: "image_rounds" },
+          user_id, amount: equivalentCredits,
+          transaction_type: equivalentCredits >= 0 ? "admin_grant" : "admin_remove",
+          description: description || `Admin ajustó ${equivalentCredits > 0 ? "+" : ""}${equivalentCredits} créditos (legacy rondas)`,
+          created_by: req.user.id, metadata: { legacy: "rounds", original_amount: amount },
         });
-        return res.json({ success: true, new_rounds: newBal });
+        return res.json({ success: true, new_balance: newBal });
       }
       case "set_unlimited": {
         const v = !!value;

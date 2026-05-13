@@ -113,7 +113,7 @@ export default function ChatBubble() {
     if (open && messages.length === 0) {
       setMessages([{
         role: "assistant",
-        content: `¡Hola! 🐼 Soy el asistente de **${BRAND.appName}**.\n\nPuedo ayudarte con:\n• Cómo usar la app y mejorar tu Panda Score\n• Estrategia de Meta Ads, métricas (CTR, CPM, ROAS) y formatos\n• Escribirte **copys** profesionales — sube una foto con 📎 o pídeme uno de tus resultados guardados\n\nPregúntame lo que necesites.`,
+        content: `¡Hola! 🐼 Soy **AdChat IA** — incluido en tu plan, sin consumir créditos.\n\nPuedo ayudarte con:\n• Cómo usar la app y mejorar tu Panda Score\n• Estrategia de Meta Ads, métricas (CTR, CPM, ROAS) y formatos\n• Escribirte **copys** profesionales — sube una foto con 📎 o pídeme uno de tus resultados guardados\n\nPregúntame lo que necesites.`,
       }]);
     }
   }, [open, messages.length]);
@@ -325,10 +325,10 @@ export default function ChatBubble() {
                   className="h-10 w-10 flex-shrink-0 rounded-xl bg-white object-contain p-0.5 shadow"
                 />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-black">{BRAND.appName} · Asistente</p>
+                  <p className="truncate text-sm font-black">AdChat IA</p>
                   <p className="flex items-center gap-1 text-[10px] text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    En línea · IA
+                    Incluido en tu plan · sin consumir créditos
                   </p>
                 </div>
               </div>

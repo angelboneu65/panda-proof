@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { authedFetch, apiPostJSON } from "./api";
+import { PLANS as CONFIG_PLANS, CREDIT_PACKAGES as CONFIG_PACKAGES } from "./config/credits";
 
 // Modal que aparece cuando un endpoint devuelve 402 (créditos insuficientes).
-// También se puede abrir manualmente desde el botón "Comprar créditos" en el sidebar.
+// También se puede abrir manualmente desde el botón "Comprar créditos".
+//
+// Usa el endpoint /api/plans como fuente de verdad (que lee de Supabase). Si
+// el endpoint falla, hace fallback a la config local de src/config/credits.js
+// para que la UI nunca se quede vacía.
 export default function CreditsModal({ open, info, onClose }) {
-  const [plans, setPlans]       = useState([]);
-  const [packages, setPackages] = useState([]);
+  const [plans, setPlans]       = useState(CONFIG_PLANS);
+  const [packages, setPackages] = useState(CONFIG_PACKAGES);
   const [busy, setBusy]         = useState(null); // slug en checkout
   const [error, setError]       = useState(null);
 
@@ -16,10 +21,24 @@ export default function CreditsModal({ open, info, onClose }) {
         const res = await authedFetch("/api/plans");
         if (res.ok) {
           const data = await res.json();
-          setPlans(data.plans || []);
-          setPackages(data.packages || []);
+          if (Array.isArray(data.plans) && data.plans.length > 0) {
+            setPlans(data.plans.map((p) => ({
+              slug: p.slug,
+              name: p.name,
+              price: Number(p.price),
+              monthlyCredits: Number(p.monthly_credits ?? p.monthlyCredits ?? 0),
+            })));
+          }
+          if (Array.isArray(data.packages) && data.packages.length > 0) {
+            setPackages(data.packages.map((p) => ({
+              slug: p.slug,
+              name: p.name,
+              price: Number(p.price),
+              credits: Number(p.credits ?? 0),
+            })));
+          }
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { /* fallback a config local */ }
     })();
   }, [open]);
 
@@ -54,7 +73,7 @@ export default function CreditsModal({ open, info, onClose }) {
         <div className="space-y-5 overflow-y-auto p-4">
           {info && (
             <div className="rounded-2xl border border-purple-400/20 bg-purple-400/10 p-3 text-[13px] text-white/80">
-              Esta acción requiere {info.required || "más"} créditos. Tienes <strong>{info.credits_balance ?? 0}</strong> créditos y <strong>{info.rounds_balance ?? 0}</strong> rondas. Puedes comprar una recarga o subir tu plan.
+              Esta acción requiere <strong>{info.required || "más"}</strong> créditos. Tienes <strong>{info.credits_balance ?? 0}</strong>. Suscríbete o compra una recarga abajo.
             </div>
           )}
 
@@ -65,24 +84,38 @@ export default function CreditsModal({ open, info, onClose }) {
           {/* Planes (suscripción) */}
           {plans.length > 0 && (
             <section>
-              <h3 className="text-[15px] font-black">Planes</h3>
-              <p className="text-[12px] text-white/40">Suscripción mensual — créditos + rondas todos los meses</p>
+              <h3 className="text-[15px] font-black">Planes mensuales</h3>
+              <p className="text-[12px] text-white/40">Créditos automáticos cada mes · AdChat IA incluido</p>
               <div className="mt-2 space-y-2">
-                {plans.filter((p) => p.slug !== "free").map((p) => (
-                  <div key={p.slug} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                    <div>
-                      <p className="text-[15px] font-black">{p.name}</p>
-                      <p className="text-[12px] text-white/55">{p.monthly_credits} créditos · {p.image_rounds} rondas · {p.analysis_limit} análisis / mes</p>
+                {plans.filter((p) => p.slug && p.slug !== "free").map((p) => {
+                  const isPro = p.slug === "pro";
+                  return (
+                    <div key={p.slug} className={`flex items-center justify-between gap-3 rounded-2xl border p-3 ${
+                      isPro
+                        ? "border-purple-400/30 bg-gradient-to-br from-purple-600/12 via-pink-500/8 to-cyan-500/12"
+                        : "border-white/10 bg-white/[0.03]"
+                    }`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex items-center gap-2 text-[15px] font-black">
+                          {p.name}
+                          {isPro && <span className="rounded-full bg-gradient-to-r from-pink-500 to-cyan-400 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">Recomendado</span>}
+                        </p>
+                        <p className="mt-0.5 text-[12px] text-white/55">{p.monthlyCredits} créditos/mes · AdChat IA incluido</p>
+                      </div>
+                      <button
+                        onClick={() => startCheckout(p.slug, "subscription")}
+                        disabled={busy === p.slug}
+                        className={`flex-shrink-0 rounded-full px-4 py-2 text-[13px] font-black disabled:opacity-60 ${
+                          isPro
+                            ? "bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 text-white shadow-lg shadow-purple-500/30 hover:brightness-110"
+                            : "bg-white text-black hover:bg-white/90"
+                        }`}
+                      >
+                        {busy === p.slug ? "…" : `$${Number(p.price).toFixed(2)}/mes`}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => startCheckout(p.slug, "subscription")}
-                      disabled={busy === p.slug}
-                      className="flex-shrink-0 rounded-full bg-white px-4 py-2 text-[13px] font-black text-black hover:bg-white/90 disabled:opacity-60"
-                    >
-                      {busy === p.slug ? "…" : `$${Number(p.price).toFixed(2)}/mes`}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -90,34 +123,35 @@ export default function CreditsModal({ open, info, onClose }) {
           {/* Paquetes (compra única) */}
           {packages.length > 0 && (
             <section>
-              <h3 className="text-[15px] font-black">Recargas únicas</h3>
-              <p className="text-[12px] text-white/40">Pago único — no renovable</p>
+              <h3 className="text-[15px] font-black">Recargas de créditos</h3>
+              <p className="text-[12px] text-white/40">Pago único · se suman a tu balance actual</p>
               <div className="mt-2 space-y-2">
-                {packages.map((p) => (
-                  <div key={p.slug} className="flex items-center justify-between gap-3 rounded-2xl border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-3">
-                    <div>
-                      <p className="text-[14px] font-black">{p.name}</p>
-                      <p className="text-[11px] text-white/55">
-                        {p.credits > 0 ? `+${p.credits} créditos` : ""}
-                        {p.credits > 0 && p.image_rounds > 0 ? " · " : ""}
-                        {p.image_rounds > 0 ? `+${p.image_rounds} rondas (5 imgs c/u)` : ""}
-                      </p>
+                {packages.map((p) => {
+                  const perCredit = p.credits > 0 ? (Number(p.price) / Number(p.credits)) : 0;
+                  return (
+                    <div key={p.slug} className="flex items-center justify-between gap-3 rounded-2xl border border-purple-400/20 bg-gradient-to-br from-purple-600/8 via-pink-500/4 to-cyan-500/8 p-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-black">{p.credits} créditos</p>
+                        <p className="mt-0.5 text-[11px] text-white/50">
+                          {perCredit > 0 ? `≈ $${perCredit.toFixed(3)}/crédito` : ""}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => startCheckout(p.slug, "package")}
+                        disabled={busy === p.slug}
+                        className="flex-shrink-0 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 px-4 py-2 text-[13px] font-black text-white shadow-lg hover:brightness-110 disabled:opacity-60"
+                      >
+                        {busy === p.slug ? "…" : `$${Number(p.price).toFixed(2)}`}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => startCheckout(p.slug, "package")}
-                      disabled={busy === p.slug}
-                      className="flex-shrink-0 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 px-4 py-2 text-[13px] font-black text-white shadow-lg hover:brightness-110 disabled:opacity-60"
-                    >
-                      {busy === p.slug ? "…" : `$${Number(p.price).toFixed(2)}`}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
 
           <p className="text-center text-[10px] text-white/30">
-            Los créditos se asignan después de que Stripe confirma el pago.
+            Los créditos se acreditan automáticamente al confirmarse el pago en Stripe.
           </p>
         </div>
       </div>

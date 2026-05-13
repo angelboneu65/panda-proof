@@ -90,16 +90,14 @@ export default function AdminPanel() {
                   {u.subscription_status && <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 font-black text-cyan-200">{u.subscription_status}</span>}
                 </div>
                 <p className="mt-2 text-[12px] text-white/65">
-                  💰 <strong>{u.credits_balance}</strong> créditos · 🎬 <strong>{u.image_rounds_balance}</strong> rondas
+                  💰 <strong>{u.credits_balance}</strong> créditos
                 </p>
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+            <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
               <button onClick={() => { const n = prompt("¿Cuántos créditos añadir? (negativo para quitar)", "100"); if (n !== null) act(u.id, "grant_credits", { amount: parseInt(n, 10), description: "Ajuste admin" }); }}
                       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 font-black text-white/80 hover:bg-white/10">+/− Créditos</button>
-              <button onClick={() => { const n = prompt("¿Cuántas rondas añadir? (negativo para quitar)", "1"); if (n !== null) act(u.id, "grant_rounds", { amount: parseInt(n, 10), description: "Ajuste admin" }); }}
-                      className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 font-black text-white/80 hover:bg-white/10">+/− Rondas</button>
               <button onClick={() => act(u.id, "set_unlimited", { value: !u.is_unlimited })}
                       className="rounded-xl border border-white/10 bg-white/5 px-2 py-2 font-black text-white/80 hover:bg-white/10">
                 {u.is_unlimited ? "Quitar ∞" : "Activar ∞"}
