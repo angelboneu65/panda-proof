@@ -12,6 +12,7 @@ import ChatBubble from "./ChatBubble";
 import AdminPanel from "./AdminPanel";
 import CreditsModal from "./CreditsModal";
 import AccountSettings from "./AccountSettings";
+import CommunityView from "./CommunityView";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
 
@@ -1249,7 +1250,7 @@ export default function App() {
 
 // ── Main app shell (after auth) ───────────────────────────────────────────────
 function MainApp({ session }) {
-  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin | account
+  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin | account | community
   const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
   const [chargeToast, setChargeToast]   = useState(null);
   const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
@@ -1528,6 +1529,12 @@ function MainApp({ session }) {
               )}
             </button>
           )}
+          <button
+            onClick={() => setView("community")}
+            className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "community" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
+          >
+            <span>🌐</span> Comunidad
+          </button>
           {supabaseEnabled && session && (
             <button
               onClick={() => setView("account")}
@@ -1589,6 +1596,12 @@ function MainApp({ session }) {
                   )}
                 </div>
               )}
+              <div
+                onClick={() => setView("community")}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "community" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+              >
+                <span>🌐</span> Comunidad
+              </div>
               {supabaseEnabled && session && (
                 <div
                   onClick={() => setView("account")}
@@ -1729,6 +1742,7 @@ function MainApp({ session }) {
               onReset={handleReset}
             />
           )}
+          {view === "community" && <CommunityView session={session} isAdmin={isAdmin} />}
           {view === "admin"   && isAdmin && <AdminPanel />}
           {view === "account" && supabaseEnabled && session && (
             <AccountSettings
