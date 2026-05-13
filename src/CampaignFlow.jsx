@@ -119,7 +119,7 @@ function RainbowSpinner({ progress = null }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CREATE VIEW — chooser entre las dos rutas principales
 // ══════════════════════════════════════════════════════════════════════════════
-export function CreateView({ onPickAnalyze, onPickCampaign }) {
+export function CreateView({ onPickAnalyze, onPickCampaign, onPickMenu }) {
   return (
     <div className="space-y-5">
 
@@ -143,7 +143,7 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
         </p>
       </section>
 
-      {/* ── Two main cards ── */}
+      {/* ── Main cards ── */}
       <div className="grid gap-5 lg:grid-cols-2">
 
         {/* CARD 1 — Analizar diseño */}
@@ -208,6 +208,40 @@ export function CreateView({ onPickAnalyze, onPickCampaign }) {
           </div>
         </button>
       </div>
+
+      {/* CARD 3 — Mejorar Menú (nuevo, sección independiente) */}
+      {onPickMenu && (
+        <button
+          onClick={onPickMenu}
+          className="group relative w-full overflow-hidden rounded-[24px] border border-cyan-300/25 bg-gradient-to-br from-cyan-500/10 via-purple-500/10 to-pink-500/10 p-5 text-left backdrop-blur-xl transition hover:border-cyan-300/45 active:scale-[0.99] sm:rounded-[32px] sm:p-6"
+          style={{ boxShadow: "0 0 0 1px rgba(6, 182, 212, 0.15), 0 12px 40px -12px rgba(6, 182, 212, 0.35)" }}
+        >
+          <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-cyan-300/40 bg-cyan-500/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-100">
+            ✨ Nuevo
+          </span>
+
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-purple-500 to-pink-500 text-2xl shadow-lg shadow-cyan-500/30">
+            🍽️
+          </div>
+          <h3 className="text-2xl font-black leading-tight">Mejorar Menú</h3>
+          <p className="mt-2 text-sm leading-relaxed text-white/60">
+            Sube un menú actual y {BRAND.appName} lo convierte en una versión más profesional, clara y lista para vender. También puede segmentarlo en historias 9:16.
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Badge icon="🧠" label="Análisis Opus" />
+            <Badge icon="🎨" label="Rediseño limpio" />
+            <Badge icon="📱" label="Historias 9:16" />
+            <Badge icon="🖼️" label="Usa tus fotos" />
+          </div>
+
+          <div className="mt-5">
+            <div className="rounded-2xl bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 px-5 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-500/30 transition group-hover:brightness-110">
+              🍽️ Subir menú
+            </div>
+          </div>
+        </button>
+      )}
     </div>
   );
 }

@@ -174,6 +174,81 @@ export async function deleteCampaign(id) {
   if (error) console.error("deleteCampaign:", error.message);
 }
 
+// ── Mejorar Menú (reutiliza la tabla "campaigns" con flag interno) ────────────
+// Guardamos cada sesión de menú como una fila en `campaigns` con
+// `niche = "menu_improver"` y la data completa en el campo JSON `data`.
+// Así no necesitamos migración de schema y reutilizamos listCampaigns/getCampaign
+// para historial. La UI filtra por niche.
+export async function saveMenuSession(session) {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const thumb = session.improvedImage
+             || session.stories?.find?.((s) => s.image)?.image
+             || session.originalImage
+             || null;
+
+  const payload = {
+    kind: "menu_improver",
+    mode: session.mode || "improve",          // "improve" | "segment" | "both"
+    format: session.format || "1080x1920",
+    instructions: session.instructions || "",
+    originalImage: session.originalImage || null,
+    improvedImage: session.improvedImage || null,
+    stories: session.stories || [],
+    analysis: session.analysis || null,
+    summary: session.summary || [],
+    analysisModel: "claude-opus-4-7",
+    generationModel: "gpt-image-2",
+  };
+
+  const { data: row, error } = await supabase
+    .from("campaigns")
+    .insert({
+      user_id:      user.id,
+      product_name: session.analysis?.businessName || session.analysis?.businessType || "Menú mejorado",
+      niche:        "menu_improver",
+      city:         session.analysis?.address || null,
+      thumbnail:    thumb,
+      data:         payload,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveMenuSession:", error.message);
+    return null;
+  }
+  return row;
+}
+
+export async function listMenuSessions() {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("id, created_at, product_name, niche, city, thumbnail, data")
+    .eq("niche", "menu_improver")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) { console.error("listMenuSessions:", error.message); return []; }
+  return data || [];
+}
+
+export async function getMenuSession(id) {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("campaigns").select("*").eq("id", id).single();
+  if (error) { console.error("getMenuSession:", error.message); return null; }
+  return data;
+}
+
+export async function deleteMenuSession(id) {
+  if (!supabase) return;
+  const { error } = await supabase.from("campaigns").delete().eq("id", id);
+  if (error) console.error("deleteMenuSession:", error.message);
+}
+
 // ── Saved Results (galería de artes optimizados guardados) ──────────────────
 export async function saveResult(result) {
   if (!supabase) return null;

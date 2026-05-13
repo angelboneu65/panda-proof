@@ -4,9 +4,11 @@ import {
   saveAnalysis, listAnalyses, deleteAnalysis, rowToAnalysis,
   saveCampaign, updateCampaign, listCampaigns, getCampaign, deleteCampaign,
   saveResult, listResults, deleteResult,
+  getMenuSession,
 } from "./supabase";
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
+import MenuImproverFlow from "./MenuImproverFlow";
 import { BRAND } from "./brand";
 import ChatBubble from "./ChatBubble";
 import AdminPanel from "./AdminPanel";
@@ -1121,8 +1123,46 @@ function CampaignHistoryCard({ row, onLoad, onDelete }) {
   );
 }
 
-function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset, onOpenEditor }) {
-  const totalCount = history.length + campaigns.length + (savedResults?.length || 0);
+function MenuSessionCard({ row, onLoad, onDelete }) {
+  const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
+  const mode = row.data?.mode || "improve";
+  const label = mode === "segment" ? "Segmentación de Menú para Historias" : mode === "both" ? "Mejora + Historias" : "Mejora de Menú";
+  return (
+    <div className="group relative w-full overflow-hidden rounded-[20px] border border-cyan-300/20 bg-gradient-to-br from-cyan-500/10 via-purple-500/5 to-pink-500/10 p-4 backdrop-blur-xl transition hover:border-cyan-300/40">
+      <button
+        onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este menú?")) onDelete(row.id); }}
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-black text-white/60 opacity-100 transition hover:bg-red-600/50 hover:text-red-200 sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Eliminar"
+      >✕</button>
+
+      <div onClick={() => onLoad?.(row.id)} className="cursor-pointer pr-8">
+        <div className="flex items-start gap-3">
+          {row.thumbnail ? (
+            <div className="flex-shrink-0 overflow-hidden rounded-2xl bg-black/30 ring-1 ring-white/10" style={{ width: 56, height: 56 }}>
+              <img src={row.thumbnail} alt="" className="block h-full w-full object-contain" />
+            </div>
+          ) : (
+            <div className="flex flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-purple-500 to-pink-500 text-2xl shadow-lg" style={{ width: 56, height: 56 }}>🍽️</div>
+          )}
+          <div className="min-w-0 flex-1">
+            <span className="inline-block rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-cyan-200">{label}</span>
+            <p className="mt-1.5 text-[15px] font-bold leading-snug text-white/90 break-words">{row.product_name || "Menú"}</p>
+            <p className="mt-0.5 text-[13px] text-white/55 break-words">
+              {(row.data?.stories?.length || 0) > 0 ? `${row.data.stories.length} historias` : "Menú mejorado"}
+            </p>
+            <p className="mt-1 text-[11px] text-white/30">{date}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset, onOpenEditor, onLoadMenu }) {
+  // Separamos menús mejorados de campañas Foto a Campaña (ambos viven en la misma tabla)
+  const menuSessions = (campaigns || []).filter((r) => r.niche === "menu_improver");
+  const realCampaigns = (campaigns || []).filter((r) => r.niche !== "menu_improver");
+  const totalCount = history.length + realCampaigns.length + menuSessions.length + (savedResults?.length || 0);
   const recentResults = (savedResults || []).slice(0, 3);
 
   if (totalCount === 0) {
@@ -1152,7 +1192,9 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
           <p className="mt-1 text-[13px] leading-snug text-white/40">
             {history.length} {history.length === 1 ? "análisis" : "análisis"}
             {" · "}
-            {campaigns.length} {campaigns.length === 1 ? "campaña" : "campañas"}
+            {realCampaigns.length} {realCampaigns.length === 1 ? "campaña" : "campañas"}
+            {" · "}
+            {menuSessions.length} {menuSessions.length === 1 ? "menú" : "menús"}
             {" · "}
             {savedResults?.length || 0} {(savedResults?.length || 0) === 1 ? "resultado" : "resultados"}
           </p>
@@ -1181,15 +1223,30 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
       )}
 
       {/* Campañas */}
-      {campaigns.length > 0 && (
+      {realCampaigns.length > 0 && (
         <section className="space-y-3">
           <div>
             <h3 className="text-[15px] font-black text-white/90">Campañas Foto a Campaña</h3>
             <p className="text-[12px] text-white/40">Toca una para abrir los 5 anuncios</p>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {campaigns.map((row) => (
+            {realCampaigns.map((row) => (
               <CampaignHistoryCard key={row.id} row={row} onLoad={onLoadCampaign} onDelete={onDeleteCampaign} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Mejora de Menú / Segmentación de Menú para Historias */}
+      {menuSessions.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-[15px] font-black text-white/90">Menús mejorados</h3>
+            <p className="text-[12px] text-white/40">Toca uno para volver a verlo y crear otra versión</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {menuSessions.map((row) => (
+              <MenuSessionCard key={row.id} row={row} onLoad={onLoadMenu} onDelete={onDeleteCampaign} />
             ))}
           </div>
         </section>
@@ -1380,6 +1437,14 @@ function MainApp({ session }) {
     setCampaignHistory((h) => h.filter((r) => r.id !== id));
   };
 
+  const [loadedMenu, setLoadedMenu] = useState(null);
+  const handleLoadMenu = async (rowId) => {
+    const full = await getMenuSession(rowId);
+    if (!full?.data) return;
+    setLoadedMenu({ ...full.data, savedId: full.id });
+    setView("menu-improver");
+  };
+
   const handleAnalyze = async (file, form) => {
     setImageFile(file);
     setFormData(form);
@@ -1451,9 +1516,10 @@ function MainApp({ session }) {
   const goToCreate = () => { setLoadedCampaign(null); setView("create"); };
   const startAnalyzeFlow = () => setView("upload");
   const startCampaignFlow = () => { setLoadedCampaign(null); setView("campaign"); };
+  const startMenuFlow = () => { setLoadedMenu(null); setView("menu-improver"); };
 
-  // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign)?
-  const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign";
+  // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign, menu)?
+  const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign" || view === "menu-improver";
 
   // Avatar URL del perfil (con cache bust incluido en el URL)
   const avatarUrl = profile?.avatar_url || null;
@@ -1718,7 +1784,15 @@ function MainApp({ session }) {
               ⚠️ {error}
             </div>
           )}
-          {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} />}
+          {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} onPickMenu={startMenuFlow} />}
+          {view === "menu-improver" && (
+            <MenuImproverFlow
+              key={loadedMenu?.savedId || "new"}
+              initialSession={loadedMenu}
+              onExit={() => { setLoadedMenu(null); setView("create"); }}
+              onSavedSession={() => { refreshCampaigns?.(); refreshSavedResults?.(); }}
+            />
+          )}
           {view === "upload"    && <UploadView onAnalyze={handleAnalyze} globalError={null} />}
           {view === "analyzing" && <AnalyzingView />}
           {view === "campaign"  && (
@@ -1750,6 +1824,7 @@ function MainApp({ session }) {
               onLoadCampaign={handleLoadCampaign}
               onDeleteCampaign={handleDeleteCampaign}
               onDeleteResult={handleDeleteResult}
+              onLoadMenu={handleLoadMenu}
               onReset={handleReset}
             />
           )}

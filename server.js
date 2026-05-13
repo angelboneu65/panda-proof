@@ -92,6 +92,8 @@ const CREDIT_COSTS = {
   photoCampaignAnalysis:   0,
   generateSinglePhotoAd:   5,
   generateFivePhotoAds:    20,
+  improveMenu:             50,
+  segmentMenuStories:      50,
 };
 
 // IMPORTANTE: el webhook DEBE registrarse ANTES de express.json() para que el
@@ -1210,6 +1212,344 @@ The product from the source photo MUST be the visual hero of the composition.`;
   } catch (err) {
     console.error("❌ regenerate-ad:", err.message);
     if (charge_tx) await refundTransaction(charge_tx, "Regenerate-ad falló: " + err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MEJORAR MENÚ — análisis Opus + rediseño completo y/o segmentación 9:16
+// ─────────────────────────────────────────────────────────────────────────────
+// Flujo:
+//   /api/menu/analyze   → Opus 4.7 extrae estructura y problemas del menú (gratis)
+//   /api/menu/improve   → gpt-image-2 genera UN menú mejorado (50 créditos)
+//   /api/menu/segment   → Opus arma N prompts → gpt-image-2 genera N historias 9:16 (50 créditos)
+// Los prompts internos NO se devuelven al frontend (spec: nunca mostrarlos al usuario).
+// ═════════════════════════════════════════════════════════════════════════════
+
+const MENU_ANALYZE_MODEL = "claude-opus-4-7";
+
+function sizeForFormat(format) {
+  // gpt-image-2 acepta 1024x1024, 1024x1536, 1536x1024 o "auto"
+  switch (format) {
+    case "1080x1080": return "1024x1024";
+    case "1080x1350": return "1024x1536";
+    case "1080x1920": return "1024x1536";
+    case "8.5x11":    return "1024x1536";
+    case "original":  return "auto";
+    default:          return "1024x1536";
+  }
+}
+
+// 1) Analiza un menú: Opus extrae estructura, problemas y resumen (no cobra)
+app.post("/api/menu/analyze", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
+
+    const imageBase64 = req.file.buffer.toString("base64");
+    const mediaType   = req.file.mimetype;
+
+    const message = await client.messages.create({
+      model:      MENU_ANALYZE_MODEL,
+      max_tokens: 2500,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+          {
+            type: "text",
+            text: `Eres un director de arte y consultor experto en diseño de menús de restaurantes, cafeterías y negocios de comida.
+Analiza esta imagen de un menú existente y extrae TODA la información visible. NO INVENTES NADA. Si algo no se ve con claridad, déjalo vacío o anota que era ilegible.
+
+Devuelve ÚNICAMENTE este JSON, sin markdown ni texto adicional:
+{
+  "looksLikeMenu": <true/false — si claramente no es un menú/lista de productos>,
+  "businessName": "<nombre del negocio o '' si no aparece>",
+  "businessType": "<tipo de negocio, ej: Restaurante caribeño, Cafetería, Food truck, Spa, Salón>",
+  "phone": "<teléfono o ''>",
+  "address": "<dirección o ubicación o ''>",
+  "hours": "<horario o ''>",
+  "socialMedia": ["<@usuario o url>"],
+  "sections": [
+    { "title": "<nombre de la sección>", "items": [{ "name": "<plato/producto>", "price": "<precio o ''>", "description": "<descripción breve si aparece o ''>" }] }
+  ],
+  "highlightedItems": ["<platos/ofertas más prominentes visualmente>"],
+  "existingPhotos": <número aproximado de fotos de comida/producto visibles>,
+  "primaryColors": ["#hex1", "#hex2"],
+  "currentVisualStyle": "<descripción del estilo actual, ej: 'menú impreso recargado, fondo blanco, texto rojo'>",
+  "designIssues": ["<problema 1>", "<problema 2>", "..."],
+  "illegibleAreas": <true/false — si hay texto que no se pudo leer claramente>,
+  "summary": "<resumen breve en español de los problemas y oportunidades de mejora>"
+}
+
+Problemas posibles a detectar (incluye los que apliquen en designIssues, en español):
+exceso de texto, mala jerarquía visual, poca legibilidad, saturación visual, mala distribución, fotos mal acomodadas, contraste débil, falta de estructura, texto muy pequeño, elementos desordenados, apariencia poco profesional, colores desbalanceados, tipografías inconsistentes.
+
+REGLAS CRÍTICAS:
+- NO inventes precios, teléfonos, direcciones, horarios ni productos que no aparezcan.
+- Si un precio o texto es ilegible, déjalo en "" y marca illegibleAreas: true.
+- Sé exhaustivo extrayendo secciones y platos.`,
+          },
+        ],
+      }],
+    });
+
+    const raw   = message.content[0].text;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: "No se pudo extraer la información del menú." });
+
+    let parsed;
+    try { parsed = JSON.parse(match[0]); }
+    catch (e) { return res.status(500).json({ error: "Error parseando el análisis del menú." }); }
+
+    res.json({ success: true, analysis: parsed });
+  } catch (err) {
+    console.error("❌ menu/analyze:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper: convierte la imagen original a PNG RGBA (requerido por gpt-image edit)
+async function imageBufferToPng(buffer) {
+  return await sharp(buffer).ensureAlpha().png().toBuffer();
+}
+
+// Helper: construye el prompt interno de rediseño completo (en inglés, optimizado para gpt-image-2)
+function buildMenuImprovePrompt({ analysis, instructions, format }) {
+  const sections = (analysis?.sections || []).map((s) => {
+    const items = (s.items || []).map((it) => {
+      const price = it.price ? ` — ${it.price}` : "";
+      return `  • ${it.name}${price}${it.description ? ` (${it.description})` : ""}`;
+    }).join("\n");
+    return `[${s.title}]\n${items}`;
+  }).join("\n\n");
+
+  const aspect = format === "1080x1080" ? "1:1 square"
+              : format === "1080x1350" ? "4:5 portrait"
+              : format === "1080x1920" ? "9:16 vertical story"
+              : format === "8.5x11"    ? "8.5x11 print portrait"
+              : "preserve original aspect ratio";
+
+  const userInstructions = instructions?.trim() || "make it more elegant, clean and professional";
+
+  return `You are redesigning an EXISTING menu image into a more professional, clean and visually appealing version. The original image is uploaded as reference.
+
+ABSOLUTE RULES:
+- Keep the business name EXACTLY: "${analysis?.businessName || ""}"
+- Keep phone, address, hours, prices EXACTLY as shown in the reference. Do NOT invent or change them.
+- Reuse the existing food/product photos visible in the reference image when possible (do not replace dishes with stock food).
+- Do NOT add new products, dishes, prices, offers or contact info that are not in the reference.
+- Do NOT change the business name.
+- Avoid spelling errors. Avoid distorted or unreadable text.
+- Do NOT make it look like a generic AI design — make it look like a real, polished commercial menu.
+
+DESIGN GOALS:
+- Build a professional, modern, commercial menu layout.
+- Improve visual hierarchy: clear titles, sections, prices.
+- Improve mobile readability (large enough text, clear contrast).
+- Organize information into clean sections.
+- Use a coherent aesthetic for a ${analysis?.businessType || "food business"}.
+- Aspect ratio / format: ${aspect}.
+
+USER STYLE REQUEST:
+${userInstructions}
+
+CURRENT BRAND CUES (preserve when sensible):
+- Primary colors detected: ${(analysis?.primaryColors || []).join(", ") || "warm, brand-appropriate"}
+- Current style: ${analysis?.currentVisualStyle || "unspecified"}
+
+CONTENT TO RESPECT (extracted from the reference, do not invent more):
+Business: ${analysis?.businessName || ""}
+Type: ${analysis?.businessType || ""}
+${analysis?.phone    ? `Phone: ${analysis.phone}\n` : ""}${analysis?.address ? `Address: ${analysis.address}\n` : ""}${analysis?.hours   ? `Hours: ${analysis.hours}\n` : ""}${(analysis?.socialMedia || []).length ? `Social: ${(analysis.socialMedia || []).join(", ")}\n` : ""}
+SECTIONS AND ITEMS (verbatim — do not add new ones):
+${sections || "(use the layout visible in the reference image)"}
+
+Output a single, finished, printable/postable menu design. No watermarks. No placeholder text.`;
+}
+
+// 2) Genera UN menú mejorado (50 créditos)
+app.post("/api/menu/improve", upload.single("image"), async (req, res) => {
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para mejorar menús." });
+  let charge_tx = null, chargeInfo = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.improveMenu, "image_generation", "Mejorar Menú — rediseño", { endpoint: "menu/improve" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+    chargeInfo = check.info;
+  }
+  try {
+    if (!req.file) { if (charge_tx) await refundTransaction(charge_tx, "Sin imagen"); return res.status(400).json({ error: "No se recibió imagen." }); }
+    if (!process.env.OPENAI_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "OPENAI_API_KEY"); return res.status(500).json({ error: "OPENAI_API_KEY no configurada." }); }
+
+    let analysis = {};
+    try { if (req.body.analysis) analysis = JSON.parse(req.body.analysis); } catch (e) { /* ignore */ }
+    const instructions = req.body.instructions || "";
+    const format       = req.body.format || "1080x1920";
+
+    const prompt    = buildMenuImprovePrompt({ analysis, instructions, format }).slice(0, 3900);
+    const pngBuffer = await imageBufferToPng(req.file.buffer);
+    const imageFile = await toFile(pngBuffer, "menu.png", { type: "image/png" });
+
+    const openai = getOpenAI();
+    const size   = sizeForFormat(format);
+    const response = await openai.images.edit({
+      model:   "gpt-image-2",
+      image:   imageFile,
+      prompt,
+      size,
+      quality: "high",
+    });
+
+    const b64 = response.data[0].b64_json;
+    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: "menu_improve" }));
+    res.json({
+      success: true,
+      image: `data:image/png;base64,${b64}`,
+      summary: [
+        "Se mejoró la jerarquía visual",
+        "Se organizó la información por secciones",
+        "Se mejoró la legibilidad móvil",
+        "Se usaron las imágenes de referencia",
+        "Se limpió la composición",
+      ],
+      credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined,
+    });
+  } catch (err) {
+    console.error("❌ menu/improve:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "menu/improve falló: " + err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3) Segmenta el menú en N historias 9:16 (50 créditos)
+app.post("/api/menu/segment", upload.single("image"), async (req, res) => {
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar historias." });
+  let charge_tx = null, chargeInfo = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.segmentMenuStories, "image_generation", "Mejorar Menú — historias 9:16", { endpoint: "menu/segment" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+    chargeInfo = check.info;
+  }
+  try {
+    if (!req.file) { if (charge_tx) await refundTransaction(charge_tx, "Sin imagen"); return res.status(400).json({ error: "No se recibió imagen." }); }
+    if (!process.env.OPENAI_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "OPENAI_API_KEY"); return res.status(500).json({ error: "OPENAI_API_KEY no configurada." }); }
+    if (!process.env.ANTHROPIC_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "ANTHROPIC_API_KEY"); return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." }); }
+
+    let analysis = {};
+    try { if (req.body.analysis) analysis = JSON.parse(req.body.analysis); } catch (e) { /* ignore */ }
+    const instructions  = req.body.instructions || "";
+    const requestedCount = req.body.count && req.body.count !== "auto" ? Number(req.body.count) : null;
+
+    // Paso 1: Opus arma el plan de historias (lista de prompts en inglés)
+    const planMsg = await client.messages.create({
+      model:      MENU_ANALYZE_MODEL,
+      max_tokens: 3500,
+      messages: [{
+        role: "user",
+        content: `Eres director creativo experto en historias 9:16 para Instagram / Facebook.
+
+Acabamos de analizar un menú real. Tu tarea: dividirlo en una serie coherente de historias 9:16 (1080x1920), donde cada historia se enfoca en una categoría / plato / oferta / contacto distinto.
+
+REGLAS:
+- ${requestedCount ? `Genera EXACTAMENTE ${requestedCount} historias.` : "Decide automáticamente cuántas historias generar (mínimo 3, máximo 10), según la riqueza del contenido."}
+- Cada historia debe tener un foco claro: portada, una categoría por historia (o máximo dos si son pocas), platos protagonistas, ofertas/combos destacados, y al final una historia de contacto/ubicación/CTA si la información existe.
+- NO repitas contenido entre historias.
+- NO inventes platos, precios, teléfonos, dirección, horario, redes ni ofertas que no aparezcan en el análisis.
+- NO cambies el nombre del negocio.
+- Mantén coherencia visual entre todas (mismo estilo gráfico, tipografía, paleta).
+- Usa las fotos visibles del menú original como referencia cuando aplique.
+
+ANÁLISIS DEL MENÚ:
+${JSON.stringify(analysis).slice(0, 4500)}
+
+INSTRUCCIONES DEL USUARIO (estilo deseado):
+${instructions || "(sin instrucciones extra — usa un estilo limpio, moderno y comercial)"}
+
+Devuelve ÚNICAMENTE este JSON, sin markdown:
+{
+  "stories": [
+    {
+      "title": "<título corto en español, ej: 'Portada', 'Menú del día', 'Hamburgers', 'Contacto'>",
+      "focus": "<foco/categoría en español>",
+      "imagePrompt": "<PROMPT EN INGLÉS para gpt-image-2, 80-160 palabras, listo para usar: describe layout vertical 9:16, tipografías, jerarquía, paleta, qué textos exactos colocar (nombres reales y precios reales que SÍ aparezcan en el análisis), uso de fotos de referencia, estilo coherente con el resto de la serie. NO inventar contenido nuevo. NO usar lorem ipsum.>"
+    }
+  ]
+}
+
+El imagePrompt debe ser explícito y autosuficiente para gpt-image-2 y SIEMPRE en inglés. Incluye en cada prompt una línea final: "Coherent series style — same typography family and color palette across all stories."`,
+      }],
+    });
+
+    const rawPlan   = planMsg.content[0].text;
+    const planMatch = rawPlan.match(/\{[\s\S]*\}/);
+    if (!planMatch) { if (charge_tx) await refundTransaction(charge_tx, "Plan vacío"); return res.status(500).json({ error: "No se pudo planear la serie de historias." }); }
+
+    let plan;
+    try { plan = JSON.parse(planMatch[0]); }
+    catch (e) { if (charge_tx) await refundTransaction(charge_tx, "Plan JSON inválido"); return res.status(500).json({ error: "Error parseando el plan de historias." }); }
+
+    const stories = Array.isArray(plan.stories) ? plan.stories.slice(0, 10) : [];
+    if (stories.length === 0) { if (charge_tx) await refundTransaction(charge_tx, "Sin historias"); return res.status(500).json({ error: "El plan no produjo historias." }); }
+
+    // Paso 2: genera todas las historias en paralelo
+    const openai    = getOpenAI();
+    const pngBuffer = await imageBufferToPng(req.file.buffer);
+
+    const results = await Promise.allSettled(
+      stories.map(async (story) => {
+        try {
+          const fullPrompt = `${story.imagePrompt}
+
+Aspect ratio: 9:16 vertical Instagram Story.
+NEVER invent products, prices, phones, hours or addresses — only use what is provided.
+Avoid distorted text. Avoid spelling errors. Avoid a generic AI look.`.slice(0, 3900);
+
+          const imageFile = await toFile(pngBuffer, "menu.png", { type: "image/png" });
+          const response  = await openai.images.edit({
+            model:   "gpt-image-2",
+            image:   imageFile,
+            prompt:  fullPrompt,
+            size:    "1024x1536",
+            quality: "medium",
+          });
+          const b64 = response.data[0].b64_json;
+          return {
+            title:  story.title || "Historia",
+            focus:  story.focus || "",
+            image:  `data:image/png;base64,${b64}`,
+          };
+        } catch (err) {
+          console.error(`❌ story "${story.title}":`, err.message);
+          return { title: story.title || "Historia", focus: story.focus || "", image: null, error: err.message };
+        }
+      })
+    );
+
+    const final = results.map((r) => r.status === "fulfilled" ? r.value : { image: null, error: r.reason?.message || "fail" });
+    const okCount = final.filter((s) => s.image).length;
+    if (okCount === 0 && charge_tx) {
+      await refundTransaction(charge_tx, "Ninguna historia generada");
+      return res.status(500).json({ error: "No se pudo generar ninguna historia.", stories: final });
+    }
+
+    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: "menu_segment" }));
+    res.json({
+      success: true,
+      stories: final,
+      summary: [
+        "Se segmentó el menú en historias 9:16",
+        "Se separaron platos, categorías y ofertas",
+        "Se mejoró la legibilidad móvil",
+        "Se organizaron mejor las categorías",
+        "Se mantuvo coherencia visual entre piezas",
+      ],
+      credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined,
+    });
+  } catch (err) {
+    console.error("❌ menu/segment:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "menu/segment falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });
