@@ -11,6 +11,7 @@ import { BRAND } from "./brand";
 import ChatBubble from "./ChatBubble";
 import AdminPanel from "./AdminPanel";
 import CreditsModal from "./CreditsModal";
+import AccountSettings from "./AccountSettings";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
 
@@ -1073,9 +1074,10 @@ function SavedResultCard({ row, onDelete }) {
       )}
 
       <div className="mt-3 flex items-start gap-2">
-        <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">
-          ✨ Optimizado
-        </span>
+        {row.type === "campaign_ad"
+          ? <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-purple-400/30 bg-purple-400/10 px-2 py-0.5 text-[10px] font-black text-purple-300">📷 Campaña</span>
+          : <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black text-emerald-300">✨ Optimizado</span>
+        }
         <span className="text-[10px] text-white/30 ml-auto">{date}</span>
       </div>
       <p className="mt-1.5 text-[14px] font-bold leading-snug text-white/90 break-words">
@@ -1247,7 +1249,7 @@ export default function App() {
 
 // ── Main app shell (after auth) ───────────────────────────────────────────────
 function MainApp({ session }) {
-  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin
+  const [view,      setView]      = useState("create"); // create | upload | analyzing | results | history | campaign | admin | account
   const [creditsModal, setCreditsModal] = useState({ open: false, info: null });
   const [chargeToast, setChargeToast]   = useState(null);
   const { profile, creditsEnabled, refresh: refreshProfile } = useProfile(session);
@@ -1441,6 +1443,9 @@ function MainApp({ session }) {
   // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign)?
   const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign";
 
+  // Avatar URL del perfil (con cache bust incluido en el URL)
+  const avatarUrl = profile?.avatar_url || null;
+
   return (
     <div className="min-h-screen bg-[#070812] text-white">
       {/* Ambient blobs */}
@@ -1484,11 +1489,14 @@ function MainApp({ session }) {
           )}
           {supabaseEnabled && session && (
             <button
-              onClick={handleLogout}
-              title="Cerrar sesión"
-              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white shadow"
+              onClick={() => setView("account")}
+              title="Mi cuenta"
+              className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white shadow ring-2 ring-white/10"
             >
-              {userName[0]?.toUpperCase()}
+              {avatarUrl
+                ? <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+                : userName[0]?.toUpperCase()
+              }
             </button>
           )}
         </div>
@@ -1518,6 +1526,14 @@ function MainApp({ session }) {
                   {history.length + campaignHistory.length + savedResults.length}
                 </span>
               )}
+            </button>
+          )}
+          {supabaseEnabled && session && (
+            <button
+              onClick={() => setView("account")}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold transition ${view === "account" ? "bg-white text-black" : "bg-white/[0.06] text-white/60 active:bg-white/10"}`}
+            >
+              <span>👤</span> Cuenta
             </button>
           )}
           {isAdmin && (
@@ -1571,6 +1587,14 @@ function MainApp({ session }) {
                       {history.length + campaignHistory.length + savedResults.length}
                     </span>
                   )}
+                </div>
+              )}
+              {supabaseEnabled && session && (
+                <div
+                  onClick={() => setView("account")}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${view === "account" ? "bg-white text-black" : "text-white/50 hover:bg-white/10"}`}
+                >
+                  <span>👤</span> Mi cuenta
                 </div>
               )}
               {isAdmin && (
@@ -1635,15 +1659,23 @@ function MainApp({ session }) {
             {/* User footer (logged in) */}
             {supabaseEnabled && session && (
               <div className="mt-6 border-t border-white/10 pt-4">
-                <div className="mb-3 flex items-center gap-3 px-1">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white">
-                    {userName[0]?.toUpperCase()}
+                <button
+                  onClick={() => setView("account")}
+                  className="mb-3 flex w-full items-center gap-3 rounded-2xl px-1 py-1 transition hover:bg-white/5"
+                >
+                  {/* Avatar */}
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-pink-500 to-cyan-400 text-xs font-black text-white ring-2 ring-white/10">
+                    {avatarUrl
+                      ? <img src={avatarUrl} alt="Avatar" className="h-full w-full object-cover" />
+                      : userName[0]?.toUpperCase()
+                    }
                   </div>
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 text-left">
                     <p className="truncate text-xs font-bold text-white/70">{userName}</p>
                     <p className="truncate text-[10px] text-white/30">{session.user?.email}</p>
                   </div>
-                </div>
+                  <span className="text-[10px] text-white/20">›</span>
+                </button>
                 <button
                   onClick={handleLogout}
                   className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/10 hover:text-white/80"
@@ -1672,6 +1704,7 @@ function MainApp({ session }) {
               initialStep={loadedCampaign ? "results" : "photo"}
               onSave={handleSaveCampaign}
               onUpdate={handleUpdateCampaign}
+              onSaveResult={supabaseEnabled && session ? handleSaveResult : null}
             />
           )}
           {view === "results"   && analysis && (
@@ -1696,7 +1729,16 @@ function MainApp({ session }) {
               onReset={handleReset}
             />
           )}
-          {view === "admin" && isAdmin && <AdminPanel />}
+          {view === "admin"   && isAdmin && <AdminPanel />}
+          {view === "account" && supabaseEnabled && session && (
+            <AccountSettings
+              session={session}
+              profile={profile}
+              onProfileUpdate={refreshProfile}
+              onOpenCredits={() => setCreditsModal({ open: true, info: null })}
+              onLogout={handleLogout}
+            />
+          )}
         </main>
       </div>
 

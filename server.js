@@ -1556,6 +1556,19 @@ app.get("/api/me", async (req, res) => {
   res.json({ creditsEnabled: true, profile: req.profile });
 });
 
+// Actualizar perfil (nombre + avatar_url)
+app.patch("/api/me", express.json(), async (req, res) => {
+  if (!creditsEnabled || !req.user) return res.status(401).json({ error: "No autenticado" });
+  const { full_name, avatar_url } = req.body || {};
+  const updates = { updated_at: new Date().toISOString() };
+  if (typeof full_name === "string") updates.full_name = full_name.trim().slice(0, 100);
+  if (typeof avatar_url === "string") updates.avatar_url = avatar_url;
+  if (Object.keys(updates).length === 1) return res.json({ success: true }); // solo updated_at → no-op
+  const { error } = await supabaseAdmin.from("profiles").update(updates).eq("id", req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 app.get("/api/me/transactions", async (req, res) => {
   if (!creditsEnabled || !req.user) return res.status(401).json({ error: "No autenticado" });
   const { data, error } = await supabaseAdmin

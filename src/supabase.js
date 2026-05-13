@@ -221,6 +221,38 @@ export async function deleteResult(id) {
   if (error) console.error("deleteResult:", error.message);
 }
 
+// ── Account / Profile mutations ───────────────────────────────────────────────
+
+/** Sube un archivo de imagen al bucket "avatars" y devuelve la URL pública */
+export async function uploadAvatar(file) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("No autenticado");
+  const ext = (file.name || "jpg").split(".").pop().toLowerCase() || "jpg";
+  const path = `${user.id}/avatar.${ext}`;
+  const { error } = await supabase.storage
+    .from("avatars")
+    .upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
+  if (error) throw error;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  // Cache-busting para forzar recarga de la imagen en el navegador
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
+/** Actualiza el nombre de display en auth.users (user_metadata) */
+export async function updateAuthDisplayName(name) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { error } = await supabase.auth.updateUser({ data: { name: name.trim() } });
+  if (error) throw error;
+}
+
+/** Cambia la contraseña del usuario autenticado */
+export async function changePassword(newPassword) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
 // Convert DB row → app analysis shape
 export function rowToAnalysis(row) {
   return {

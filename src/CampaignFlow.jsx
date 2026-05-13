@@ -244,7 +244,7 @@ const initialCampaignData = () => ({
   adAngles: [],
 });
 
-export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate }) {
+export function CampaignFlow({ onExit, initialData = null, initialStep = "photo", onSave, onUpdate, onSaveResult }) {
   const [step, setStep]       = useState(initialStep);
   const [data, setData]       = useState(() => initialData ? { ...initialCampaignData(), ...initialData } : initialCampaignData());
   const [error, setError]     = useState(null);
@@ -263,6 +263,7 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
   });
 
   // Auto-save la primera vez que entramos a "results" con ad angles generados
+  const savedResultsRef = useRef(new Set());
   useEffect(() => {
     if (step === "results" && data.adAngles?.length > 0 && !savedId && onSave) {
       (async () => {
@@ -270,6 +271,22 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
         if (id) setSavedId(id);
       })();
     }
+    // Guardar cada imagen generada en saved_results (galería de análisis)
+    if (step === "results" && onSaveResult) {
+      data.adAngles?.forEach((ad, i) => {
+        if (ad.generatedImage && !savedResultsRef.current.has(`init-${i}`)) {
+          savedResultsRef.current.add(`init-${i}`);
+          onSaveResult({
+            imageUrl:    ad.generatedImage,
+            type:        "campaign_ad",
+            title:       ad.angleName || `Anuncio ${i + 1}`,
+            prompt:      ad.generationPrompt || "",
+            sourceFlow:  "campaign",
+          });
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, data.adAngles?.length]);
 
   return (
@@ -307,7 +324,7 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
       {step === "form"       && <FormStep       data={data} update={update} setStep={setStep} />}
       {step === "logo"       && <LogoStep       data={data} update={update} updateBrand={updateBrand} setStep={setStep} setError={setError} />}
       {step === "generating" && <GeneratingStep data={data} update={update} setStep={setStep} setError={setError} />}
-      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} />}
+      {step === "results"    && <ResultsStep    data={data} update={update} onExit={onExit} onSaveResult={onSaveResult} />}
     </div>
   );
 }
@@ -855,7 +872,7 @@ function GeneratingStep({ data, update, setStep, setError }) {
 }
 
 // ───── PASO 6 — Resultados (5 artes) ──────────────────────────────────────────
-function ResultsStep({ data, update, onExit }) {
+function ResultsStep({ data, update, onExit, onSaveResult }) {
   const updateAdAt = (i, patch) => {
     const next = data.adAngles.slice();
     next[i] = { ...next[i], ...patch };
@@ -879,6 +896,7 @@ function ResultsStep({ data, update, onExit }) {
             brand={data.brand}
             format={data.formats?.[0] || "1080x1920"}
             onUpdate={(patch) => updateAdAt(i, patch)}
+            onSaveResult={onSaveResult}
           />
         ))}
       </div>
@@ -888,7 +906,7 @@ function ResultsStep({ data, update, onExit }) {
   );
 }
 
-function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate }) {
+function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult }) {
   const [editing, setEditing]       = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [regenerating, setRegen]    = useState(false);
@@ -933,6 +951,16 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate }) {
       if (!res.ok || !r.success) throw new Error(r.error || "Error al regenerar");
       onUpdate({ generatedImage: r.image, ...(editing ? draft : {}) });
       setEditing(false);
+      // Guardar imagen regenerada en galería de análisis
+      if (onSaveResult && r.image) {
+        onSaveResult({
+          imageUrl:   r.image,
+          type:       "campaign_ad",
+          title:      `${ad.angleName || `Anuncio ${index + 1}`} (regenerado)`,
+          prompt:     (editing ? draft : ad).generationPrompt || "",
+          sourceFlow: "campaign",
+        });
+      }
     } catch (err) {
       setRegenError(err.message);
     } finally {
