@@ -931,7 +931,7 @@ Devuelve ÚNICAMENTE este JSON, sin markdown:
       "subheadline": "<beneficio o sub-mensaje, máx 12 palabras>",
       "cta": "<call to action, máx 4 palabras, ej: Reserva ahora>",
       "designDirection": "<descripción visual: layout, paleta, ánimo, énfasis>",
-      "generationPrompt": "<prompt EN INGLÉS para gpt-image, 80-150 palabras: describe el ad completo, layout, hero del producto desde la foto, jerarquía visual, brand colors, typography, CTA prominent, mobile-optimized>"
+      "generationPrompt": "<prompt EN INGLÉS para gpt-image, 80-150 palabras: describe el ad completo, layout, hero del producto desde la foto, jerarquía visual, brand colors, typography, CTA prominent, mobile-optimized. REGLA OBLIGATORIA QUE DEBE APARECER EN EL PROMPT: la guía visual (paleta de color, mood, estilo tipográfico, arte) se DERIVA DEL LOGO de la marca, no de la foto del producto. La foto del producto solo aporta el sujeto físico — su iluminación, fondo y colores NO son la identidad de marca. El producto se re-ilumina y re-estiliza para coincidir con la identidad del LOGO.>"
     }
   ]
 }
@@ -994,12 +994,17 @@ Genera EXACTAMENTE 5 entradas. generationPrompt SIEMPRE en inglés.`,
         try {
           const fullPrompt = `${angle.generationPrompt}
 
-Brand color palette: ${brandColors}.
-Visual style: ${visualStyle}.
-${hasLogo ? "IMPORTANT: The brand logo is visible in the top-right corner of the reference photo. You MUST reproduce this exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions." : ""}
+VISUAL IDENTITY SOURCE — CRITICAL:
+${hasLogo
+  ? `The visual identity, color palette, typography vibe and overall brand aesthetic of this ad MUST be DERIVED FROM THE BRAND LOGO visible in the top-right corner of the reference image, NOT from the product photo itself. The product photo only contributes the physical product/subject — its background, lighting and colors are NOT the brand. Use the LOGO as the visual guide for: color palette, mood, typography style, and overall art direction.
+You MUST also reproduce that exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions.`
+  : `The visual identity (colors, typography vibe, mood) comes from the brand description below — NOT from the product photo's background or lighting.`}
+
+Brand color palette (from the LOGO): ${brandColors}.
+Brand visual style (from the LOGO / brand): ${visualStyle}.
 CTA: clearly visible, high contrast.
-Typography: clean, mobile-readable.
-The product from the source photo MUST be the visual hero of the composition.`;
+Typography: clean, mobile-readable, coherent with the logo's personality.
+The product from the source photo MUST be the visual HERO of the composition — but treat the photo as a product cutout, not as a style reference. Re-light and re-stage it to match the brand identity defined by the LOGO.`;
 
           const response = sourcePng
             ? await openai.images.edit({
@@ -1184,12 +1189,17 @@ app.post("/api/regenerate-ad", async (req, res) => {
 
 ${overrides.length ? `IMPORTANT — use these EXACT texts (do not rewrite):\n${overrides.join("\n")}` : ""}
 
-Brand color palette: ${brandColors}.
-Visual style: ${visualStyle}.
-${hasLogo ? "IMPORTANT: The brand logo is visible in the top-right corner of the reference photo. You MUST reproduce this exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions." : ""}
+VISUAL IDENTITY SOURCE — CRITICAL:
+${hasLogo
+  ? `The visual identity, color palette, typography vibe and overall brand aesthetic of this ad MUST be DERIVED FROM THE BRAND LOGO visible in the top-right corner of the reference image, NOT from the product photo itself. The product photo only contributes the physical product/subject — its background, lighting and colors are NOT the brand. Use the LOGO as the visual guide for: color palette, mood, typography style, and overall art direction.
+You MUST also reproduce that exact logo in the top-right corner of the final ad — preserve its shape, colors and proportions.`
+  : `The visual identity (colors, typography vibe, mood) comes from the brand description below — NOT from the product photo's background or lighting.`}
+
+Brand color palette (from the LOGO): ${brandColors}.
+Brand visual style (from the LOGO / brand): ${visualStyle}.
 CTA: clearly visible, high contrast.
-Typography: clean, mobile-readable.
-The product from the source photo MUST be the visual hero of the composition.`;
+Typography: clean, mobile-readable, coherent with the logo's personality.
+The product from the source photo MUST be the visual HERO of the composition — but treat the photo as a product cutout, not as a style reference. Re-light and re-stage it to match the brand identity defined by the LOGO.`;
 
     const response = sourcePng
       ? await openai.images.edit({
