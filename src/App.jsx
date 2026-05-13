@@ -16,9 +16,28 @@ import CommunityView from "./CommunityView";
 import { useProfile } from "./useProfile";
 import { onInsufficientCredits, onCreditCharge } from "./api";
 import { saveDesignEdit } from "./supabase";
-const DesignEditor = React.lazy(() =>
-  import("./DesignEditor").catch(() => ({ default: () => null }))
-);
+const DesignEditor = React.lazy(() => import("./DesignEditor"));
+
+class EditorErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="fixed inset-0 z-[400] flex flex-col items-center justify-center bg-[#070812] text-white gap-4 p-8">
+          <span className="text-4xl">⚠️</span>
+          <p className="text-lg font-black">El editor no pudo cargar</p>
+          <p className="text-sm text-white/50 text-center max-w-sm">{this.state.error?.message || "Error desconocido"}</p>
+          <button onClick={() => { this.setState({ error: null }); this.props.onClose?.(); }}
+            className="mt-2 rounded-xl bg-white/10 px-5 py-2 text-sm font-black hover:bg-white/20">
+            Cerrar
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -1806,15 +1825,26 @@ function MainApp({ session }) {
       )}
 
       {/* Editor visual por capas (Polotno) — fullscreen overlay */}
-      <React.Suspense fallback={null}>
-        <DesignEditor
-          open={editor.open}
-          baseImageUrl={editor.imageUrl}
-          resultId={editor.resultId}
-          onClose={closeEditor}
-          onSaved={handleSavedDesign}
-        />
-      </React.Suspense>
+      {editor.open && (
+        <EditorErrorBoundary onClose={closeEditor}>
+          <React.Suspense fallback={
+            <div className="fixed inset-0 z-[400] flex items-center justify-center bg-[#070812]">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
+                <p className="text-sm text-white/50">Cargando editor…</p>
+              </div>
+            </div>
+          }>
+            <DesignEditor
+              open={editor.open}
+              baseImageUrl={editor.imageUrl}
+              resultId={editor.resultId}
+              onClose={closeEditor}
+              onSaved={handleSavedDesign}
+            />
+          </React.Suspense>
+        </EditorErrorBoundary>
+      )}
     </div>
   );
 }

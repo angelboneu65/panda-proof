@@ -64,17 +64,18 @@ export default function DesignEditor({
         const img = await loadImageDimensions(baseImageUrl);
         const W = img?.width  || 1024;
         const H = img?.height || 1024;
-        // limita el tamaño visual del canvas para que entre en mobile
         store.setSize(W, H);
-        store.addPage();
-        store.activePage.addElement({
+        // Asegura que haya exactamente una página limpia
+        if (!store.pages.length) store.addPage();
+        const page = store.pages[0];
+        store.selectPage(page.id);
+        page.addElement({
           type:   "image",
           src:    baseImageUrl,
           x:      0,
           y:      0,
           width:  W,
           height: H,
-          // Marca para que el usuario no la borre por accidente al inicio
           name:   "base-image",
           selectable: true,
           draggable:  true,
