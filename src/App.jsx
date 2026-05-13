@@ -1219,11 +1219,18 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
 export default function App() {
   const [session, setSession]     = useState(null);
   const [authReady, setAuthReady] = useState(!supabaseEnabled);
+  // Si el usuario llegó por enlace de recuperación de contraseña, fuerza el flujo de Auth
+  const [recoveryMode, setRecoveryMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("recovery") === "1";
+  });
 
   useEffect(() => {
     if (!supabaseEnabled) return;
     getSession().then((s) => { setSession(s); setAuthReady(true); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      // Detecta evento de recuperación de contraseña → fuerza AuthView aunque haya sesión temporal
+      if (event === "PASSWORD_RECOVERY") setRecoveryMode(true);
       setSession(s);
       setAuthReady(true);
     });
@@ -1238,10 +1245,14 @@ export default function App() {
     );
   }
 
+  // Si el usuario está en flujo de recovery, AuthView se encarga del cambio de contraseña
+  // y luego limpia el modo manualmente cuando termina.
+  const showAuth = supabaseEnabled && (!session || recoveryMode);
+
   return (
     <>
-      {supabaseEnabled && !session
-        ? <AuthView onSuccess={setSession} />
+      {showAuth
+        ? <AuthView onSuccess={(s) => { setSession(s); setRecoveryMode(false); }} />
         : <MainApp session={session} />}
       <ChatBubble />
     </>

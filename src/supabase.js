@@ -253,6 +253,29 @@ export async function changePassword(newPassword) {
   if (error) throw error;
 }
 
+/** Inicia sesión con Google OAuth (redirige a Google y vuelve a la app) */
+export async function signInWithGoogle() {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin,
+      queryParams: { access_type: "offline", prompt: "consent" },
+    },
+  });
+  if (error) throw error;
+  return data;
+}
+
+/** Envía un correo con enlace para restablecer la contraseña */
+export async function sendPasswordReset(email) {
+  if (!supabase) throw new Error("Supabase no configurado");
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/?recovery=1`,
+  });
+  if (error) throw error;
+}
+
 // Convert DB row → app analysis shape
 export function rowToAnalysis(row) {
   return {
