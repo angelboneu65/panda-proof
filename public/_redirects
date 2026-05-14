@@ -1,0 +1,6 @@
+# Landing page — pretty URL sin .html
+/landing                /landing.html       200
+/inicio                 /landing.html       200
+
+# SPA fallback — todas las demás rutas sirven index.html para React routing
+/*                      /index.html         200
