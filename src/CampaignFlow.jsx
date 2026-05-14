@@ -316,7 +316,7 @@ export function CampaignFlow({ onExit, initialData = null, initialStep = "photo"
             imageUrl:    ad.generatedImage,
             type:        "campaign_ad",
             title:       ad.angleName || `Anuncio ${i + 1}`,
-            prompt:      ad.generationPrompt || "",
+            prompt:      "",  // El prompt interno de IA no se persiste (queda invisible)
             sourceFlow:  "campaign",
           });
         }
@@ -1041,7 +1041,7 @@ function AdCard({ ad, index, sourcePhoto, brand, format, onUpdate, onSaveResult 
           imageUrl:   r.image,
           type:       "campaign_ad",
           title:      `${ad.angleName || `Anuncio ${index + 1}`} (regenerado)`,
-          prompt:     (editing ? draft : ad).generationPrompt || "",
+          prompt:     "",  // Prompt interno no se persiste
           sourceFlow: "campaign",
         });
       }

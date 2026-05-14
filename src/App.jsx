@@ -619,15 +619,18 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult, onO
   const [genAnalyzing,   setGenAnalyzing]   = useState(false);
   const [genScore,       setGenScore]       = useState(null);
   const [genShortLabel,  setGenShortLabel]  = useState(null);
-  const [customPrompt,   setCustomPrompt]   = useState(regenerationPrompt || "");
+  // El prompt interno generado por Opus (regenerationPrompt) se envía al
+  // backend como "briefing" pero NUNCA se muestra al usuario. El textarea
+  // recoge SOLO instrucciones extras que el usuario escriba a mano.
+  const [customPrompt,   setCustomPrompt]   = useState("");
   const [showDetails,    setShowDetails]    = useState(false);
   const [showCreateAnother, setShowCreateAnother] = useState(false);
   const [savedId,        setSavedId]        = useState(null);
 
-  // Re-populate textarea if a different analysis is loaded (e.g. from history)
+  // Si se carga otro análisis (e.g. desde historial), limpiar el textarea.
   useEffect(() => {
-    setCustomPrompt(regenerationPrompt || "");
-  }, [regenerationPrompt]);
+    setCustomPrompt("");
+  }, [analysis?.id]);
 
   // Reset save state when a new image is generated
   useEffect(() => { setSavedId(null); }, [generatedImage]);
@@ -718,12 +721,21 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult, onO
       imageUrl:          generatedImage,
       type:              "optimized",
       title:             formData?.producto || analysis.contextUsed?.whatIsBeingSold || "Arte optimizado",
-      prompt:            customPrompt || regenerationPrompt || "",
+      prompt:            customPrompt || "",  // Solo instrucciones del usuario; el briefing interno no se persiste
       sourceFlow:        "analysis_result",
       relatedAnalysisId: analysisId,
     });
     if (id) setSavedId(id);
   };
+
+  // Autoguardado: cada generación nueva se guarda automáticamente en
+  // "Mis Resultados" sin que el usuario tenga que clickear.
+  useEffect(() => {
+    if (generatedImage && !savedId && onSaveResult) {
+      handleSaveResult();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedImage, onSaveResult]);
 
   // Reset state when starting a new generation
   const handleStartGeneration = () => {
@@ -868,11 +880,11 @@ function ResultsView({ analysis, preview, imageFile, formData, onSaveResult, onO
           <h3 className="text-lg font-black sm:text-xl">Acciones del resultado</h3>
           <p className="mt-1 text-xs text-white/40">Guarda tu arte optimizado o crea una nueva versión.</p>
 
-          {/* Primary button — Guardar */}
+          {/* Estado de autoguardado */}
           <div className="mt-5">
-            <Btn full onClick={handleSaveResult} disabled={!!savedId || !onSaveResult}>
-              {savedId ? "✓ Guardado en resultados" : "Guardar en resultados"}
-            </Btn>
+            <div className={`flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-black ${savedId ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-white/10 bg-white/5 text-white/50"}`}>
+              {savedId ? <>✓ Guardado en Mis Resultados</> : <>💾 Guardando automáticamente…</>}
+            </div>
             {!onSaveResult && (
               <p className="mt-2 text-center text-[10px] text-white/30">Inicia sesión para guardar tus resultados.</p>
             )}

@@ -830,38 +830,22 @@ function AdminEduPostForm({ post=null, onClose, onSaved }) {
 
 // ── MAIN COMMUNITY VIEW ───────────────────────────────────────────────────────
 export default function CommunityView({ session, isAdmin }) {
-  const [tab, setTab] = useState("forum");
-
   return (
     <div className="mx-auto w-full max-w-[430px] space-y-6 sm:max-w-2xl lg:max-w-none">
       {/* Hero */}
       <section className="rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-purple-600/10 via-pink-500/5 to-cyan-500/10 p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-7">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-purple-300/30 bg-purple-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-purple-200">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400"/>
-          Comunidad
+          Centro Educativo
         </div>
-        <h2 className="text-2xl font-black leading-tight sm:text-3xl">Comunidad Panda AdLab</h2>
+        <h2 className="text-2xl font-black leading-tight sm:text-3xl">Aprende con Panda AdLab</h2>
         <p className="mt-2 text-sm leading-relaxed text-white/50">
-          Aprende, comparte y mejora tus anuncios con inteligencia artificial aplicada al mercadeo real.
+          Recursos, guías y artículos sobre publicidad digital, IA aplicada al marketing y mejores prácticas.
         </p>
       </section>
 
-      {/* Tabs */}
-      <div className="flex gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1">
-        {[
-          { id:"forum",   label:"💬 Forum" },
-          { id:"edu",     label:"📚 Centro Educativo" },
-        ].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)}
-            className={`flex-1 rounded-xl py-2.5 text-sm font-black transition ${tab===t.id?"bg-white text-black shadow":"text-white/50 hover:text-white/80"}`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {/* Content */}
-      {tab==="forum" && <ForumView session={session} isAdmin={isAdmin}/>}
-      {tab==="edu"   && <EduView   session={session} isAdmin={isAdmin}/>}
+      <EduView session={session} isAdmin={isAdmin}/>
     </div>
   );
 }
