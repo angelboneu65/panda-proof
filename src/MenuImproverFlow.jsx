@@ -237,7 +237,9 @@ export default function MenuImproverFlow({ onExit, initialSession = null, onSave
       setSummary(accumSummary);
       setStep("results");
 
-      // Guardar la sesión completa (incluye originalImage como dataURL)
+      // Guardar la sesión completa. saveMenuSession sube TODAS las imágenes a
+      // Storage y devuelve la fila con las URLs ya resueltas en row.data —
+      // las reutilizamos para saved_results (sin volver a subir).
       try {
         const session = {
           mode, format, instructions,
@@ -249,16 +251,21 @@ export default function MenuImproverFlow({ onExit, initialSession = null, onSave
         };
         const row = await saveMenuSession(session);
         if (row?.id) setSavedId(row.id);
-        // Guardar cada imagen en saved_results (galería)
-        if (newImproved) {
+
+        // URLs ya subidas (idempotente: si por algo no hay row, usa las locales)
+        const savedImproved = row?.data?.improvedImage || newImproved;
+        const savedStories  = row?.data?.stories || newStories;
+
+        if (savedImproved) {
           await saveResult({
-            imageUrl:   newImproved,
+            imageUrl:   savedImproved,
             type:       "menu_improved",
             title:      currentAnalysis?.businessName || "Menú mejorado",
             sourceFlow: "menu_improver",
           });
         }
-        for (const s of newStories) {
+        for (const s of savedStories) {
+          if (!s?.image) continue;
           await saveResult({
             imageUrl:   s.image,
             type:       "menu_story",

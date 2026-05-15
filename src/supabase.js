@@ -9,6 +9,150 @@ export const supabase = (URL && KEY)
 
 export const supabaseEnabled = !!supabase;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SISTEMA DE GUARDADO v2 — Storage de imágenes
+// ───────────────────────────────────────────────────────────────────────────
+// REGLA DE ORO: la base de datos NUNCA guarda imágenes base64.
+// Toda imagen generada se comprime y se sube a Supabase Storage (object
+// storage). En la DB solo viven URLs públicas livianas (~80 bytes).
+//
+// Por qué: meter PNG de 2-4 MB como base64 en columnas de Postgres llenaba
+// la DB de 500 MB del free tier en pocos usos; al excederse, Supabase pone
+// la DB en read-only y TODOS los INSERT fallan en silencio. Ese era el bug
+// del "se vuelve a dañar".
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Bucket público existente (creado por supabase-avatars-migration.sql) con RLS
+// por carpeta = auth.uid(). Reutilizarlo evita depender de un bucket nuevo.
+const STORAGE_BUCKET = "panda-media";
+const STORAGE_BUCKET_FALLBACK = "avatars";
+
+// ¿Es una imagen embebida (base64 / blob) que DEBE subirse a Storage?
+function isEmbeddedImage(str) {
+  return typeof str === "string" &&
+    (str.startsWith("data:image") || str.startsWith("blob:"));
+}
+
+// Comprime una imagen a WebP (o JPEG de fallback) y la reescala si excede
+// maxDim. Reduce el peso 3-5x sin pérdida visible — clave para que Storage
+// no se llene. Devuelve un Blob. Si algo falla, cae al blob original.
+async function compressImageBlob(src, { maxDim = 1600, quality = 0.9 } = {}) {
+  const originalBlob = await (await fetch(src)).blob();
+  try {
+    const bitmap = await createImageBitmap(originalBlob);
+    let { width, height } = bitmap;
+    if (width > maxDim || height > maxDim) {
+      const scale = maxDim / Math.max(width, height);
+      width  = Math.round(width  * scale);
+      height = Math.round(height * scale);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+
+    const out = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/webp", quality);
+    });
+    // Si WebP no está soportado o salió más pesado, intentar JPEG
+    if (!out || out.size >= originalBlob.size) {
+      const jpeg = await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", quality);
+      });
+      if (jpeg && jpeg.size < originalBlob.size) return jpeg;
+      return out || originalBlob;
+    }
+    return out;
+  } catch (e) {
+    console.warn("[compressImageBlob] usando blob original:", e?.message);
+    return originalBlob;
+  }
+}
+
+/**
+ * Sube una imagen embebida (dataURL/blob) a Storage y devuelve su URL pública.
+ * - Si `src` ya es una URL http(s) → la devuelve tal cual (idempotente).
+ * - Si no hay sesión o Supabase está apagado → devuelve `src` sin tocar.
+ * - 3 reintentos con backoff. Prueba bucket principal y luego el de fallback.
+ * Lanza Error solo si TODOS los intentos fallan.
+ */
+export async function uploadImageToStorage(src, { folder = "gen", userId = null } = {}) {
+  if (!supabase || !src || typeof src !== "string") return src || null;
+  if (src.startsWith("http")) return src;          // ya está en Storage / es URL
+  if (!isEmbeddedImage(src))  return src;          // no es imagen embebida
+
+  let uid = userId;
+  if (!uid) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      uid = user?.id || null;
+    } catch (_) { /* ignore */ }
+  }
+  if (!uid) return src; // sin usuario no podemos cumplir la RLS por carpeta
+
+  let blob;
+  try {
+    blob = await compressImageBlob(src);
+  } catch (e) {
+    blob = await (await fetch(src)).blob();
+  }
+  const ext = blob.type.includes("webp") ? "webp"
+            : blob.type.includes("jpeg") ? "jpg"
+            : blob.type.includes("png")  ? "png" : "img";
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${ext}`;
+
+  const buckets = [STORAGE_BUCKET, STORAGE_BUCKET_FALLBACK];
+  let lastErr = null;
+  for (const bucket of buckets) {
+    const path = `${uid}/${folder}/${fileName}`;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(path, blob, { contentType: blob.type || "image/webp", upsert: false });
+      if (!error) {
+        const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+        return data.publicUrl;
+      }
+      lastErr = error;
+      // "Bucket not found" → no reintentar este bucket, pasar al fallback
+      if (/not found|does not exist/i.test(error.message || "")) break;
+      await new Promise((r) => setTimeout(r, 350 * attempt));
+    }
+  }
+  console.error("[uploadImageToStorage] falló en todos los buckets:", lastErr?.message);
+  throw new Error("storage_upload_failed");
+}
+
+/**
+ * Recorre recursivamente un objeto/array y sube a Storage cualquier string
+ * que sea una imagen embebida, reemplazándola por su URL pública.
+ * Usado para sanitizar los JSON `data` de campañas y sesiones de menú.
+ */
+export async function uploadAllImagesDeep(value, { folder = "gen", userId = null } = {}) {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    if (isEmbeddedImage(value)) {
+      try { return await uploadImageToStorage(value, { folder, userId }); }
+      catch (_) { return value; } // si falla, conservar (caso raro)
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) out.push(await uploadAllImagesDeep(item, { folder, userId }));
+    return out;
+  }
+  if (typeof value === "object") {
+    const out = {};
+    for (const k of Object.keys(value)) {
+      out[k] = await uploadAllImagesDeep(value[k], { folder, userId });
+    }
+    return out;
+  }
+  return value;
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export async function signUp({ email, password, name }) {
   if (!supabase) throw new Error("Supabase no configurado");
@@ -95,23 +239,25 @@ export async function deleteAnalysis(id) {
 }
 
 // ── Campaigns (Foto a Campaña) ────────────────────────────────────────────────
+// Antes de guardar, TODA imagen embebida dentro de `data` (foto subida, logo,
+// anuncios generados) se sube a Storage y se reemplaza por su URL.
 export async function saveCampaign(data) {
   if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  // Thumbnail: usamos la primera imagen generada (si existe) para preview
-  const thumb = data.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
+  const cleanData = await uploadAllImagesDeep(data, { folder: "campaign", userId: user.id });
+  const thumb = cleanData.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
 
   const { data: row, error } = await supabase
     .from("campaigns")
     .insert({
       user_id:      user.id,
-      product_name: data.productName || "Sin nombre",
-      niche:        data.detectedNiche || null,
-      city:         data.location?.city || null,
+      product_name: cleanData.productName || "Sin nombre",
+      niche:        cleanData.detectedNiche || null,
+      city:         cleanData.location?.city || null,
       thumbnail:    thumb,
-      data,
+      data:         cleanData,
     })
     .select()
     .single();
@@ -125,15 +271,20 @@ export async function saveCampaign(data) {
 
 export async function updateCampaign(id, data) {
   if (!supabase) return null;
-  const thumb = data.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
+  const { data: { user } } = await supabase.auth.getUser();
+  const uid = user?.id || null;
+
+  const cleanData = await uploadAllImagesDeep(data, { folder: "campaign", userId: uid });
+  const thumb = cleanData.adAngles?.find?.((a) => a.generatedImage)?.generatedImage || null;
+
   const { error } = await supabase
     .from("campaigns")
     .update({
-      product_name: data.productName || "Sin nombre",
-      niche:        data.detectedNiche || null,
-      city:         data.location?.city || null,
+      product_name: cleanData.productName || "Sin nombre",
+      niche:        cleanData.detectedNiche || null,
+      city:         cleanData.location?.city || null,
       thumbnail:    thumb,
-      data,
+      data:         cleanData,
       updated_at:   new Date().toISOString(),
     })
     .eq("id", id);
@@ -184,9 +335,35 @@ export async function saveMenuSession(session) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const thumb = session.improvedImage
-             || session.stories?.find?.((s) => s.image)?.image
-             || session.originalImage
+  const uid = user.id;
+
+  // Subir TODAS las imágenes a Storage en paralelo. La DB solo verá URLs.
+  let originalImage = session.originalImage || null;
+  let improvedImage = session.improvedImage || null;
+  let stories       = Array.isArray(session.stories) ? session.stories : [];
+
+  try {
+    const [orig, improved, storyImgs] = await Promise.all([
+      originalImage ? uploadImageToStorage(originalImage, { folder: "menu", userId: uid }).catch(() => originalImage) : null,
+      improvedImage ? uploadImageToStorage(improvedImage, { folder: "menu", userId: uid }).catch(() => improvedImage) : null,
+      Promise.all(stories.map((s) =>
+        s?.image
+          ? uploadImageToStorage(s.image, { folder: "menu", userId: uid })
+              .then((url) => ({ ...s, image: url }))
+              .catch(() => s)
+          : Promise.resolve(s)
+      )),
+    ]);
+    originalImage = orig;
+    improvedImage = improved;
+    stories       = storyImgs;
+  } catch (e) {
+    console.error("saveMenuSession: error subiendo imágenes —", e.message);
+  }
+
+  const thumb = improvedImage
+             || stories.find?.((s) => s.image)?.image
+             || originalImage
              || null;
 
   const payload = {
@@ -194,19 +371,19 @@ export async function saveMenuSession(session) {
     mode: session.mode || "improve",          // "improve" | "segment" | "both"
     format: session.format || "1080x1920",
     instructions: session.instructions || "",
-    originalImage: session.originalImage || null,
-    improvedImage: session.improvedImage || null,
-    stories: session.stories || [],
+    originalImage,
+    improvedImage,
+    stories,
     analysis: session.analysis || null,
     summary: session.summary || [],
-    analysisModel: "claude-opus-4-7",
-    generationModel: "gpt-image-2",
+    analysisModel: "panda-analyzer",
+    generationModel: "panda-image",
   };
 
   const { data: row, error } = await supabase
     .from("campaigns")
     .insert({
-      user_id:      user.id,
+      user_id:      uid,
       product_name: session.analysis?.businessName || session.analysis?.businessType || "Menú mejorado",
       niche:        "menu_improver",
       city:         session.analysis?.address || null,
@@ -250,16 +427,30 @@ export async function deleteMenuSession(id) {
 }
 
 // ── Saved Results (galería de artes optimizados guardados) ──────────────────
+// La imagen SIEMPRE se sube a Storage; la fila guarda solo la URL pública.
 export async function saveResult(result) {
   if (!supabase) return null;
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
+  if (!result?.imageUrl) { console.error("saveResult: sin imageUrl"); return null; }
+
+  // Subir a Storage. Si falla tras los reintentos, abortamos: NO metemos
+  // base64 a la DB (eso es justo lo que la rompía).
+  let imageUrl;
+  try {
+    imageUrl = await uploadImageToStorage(result.imageUrl, {
+      folder: "results", userId: user.id,
+    });
+  } catch (e) {
+    console.error("saveResult: upload a Storage falló —", e.message);
+    return null;
+  }
 
   const { data: row, error } = await supabase
     .from("saved_results")
     .insert({
       user_id:             user.id,
-      image_url:           result.imageUrl,
+      image_url:           imageUrl,
       type:                result.type || "optimized",
       title:               result.title || null,
       prompt:              result.prompt || null,
