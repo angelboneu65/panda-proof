@@ -119,7 +119,7 @@ function RainbowSpinner({ progress = null }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CREATE VIEW — chooser entre las dos rutas principales
 // ══════════════════════════════════════════════════════════════════════════════
-export function CreateView({ onPickAnalyze, onPickCampaign, onPickMenu, onPickIg }) {
+export function CreateView({ onPickAnalyze, onPickCampaign, onPickMenu }) {
   return (
     <div className="space-y-5">
 
@@ -238,40 +238,6 @@ export function CreateView({ onPickAnalyze, onPickCampaign, onPickMenu, onPickIg
           <div className="mt-5">
             <div className="rounded-2xl bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 px-5 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-500/30 transition group-hover:brightness-110">
               🍽️ Subir menú
-            </div>
-          </div>
-        </button>
-      )}
-
-      {/* CARD 4 — Thumbnails IG (nuevo, sección independiente) */}
-      {onPickIg && (
-        <button
-          onClick={onPickIg}
-          className="group relative w-full overflow-hidden rounded-[24px] border border-pink-300/25 bg-gradient-to-br from-pink-500/10 via-purple-500/10 to-cyan-500/10 p-5 text-left backdrop-blur-xl transition hover:border-pink-300/45 active:scale-[0.99] sm:rounded-[32px] sm:p-6"
-          style={{ boxShadow: "0 0 0 1px rgba(236, 72, 153, 0.15), 0 12px 40px -12px rgba(236, 72, 153, 0.35)" }}
-        >
-          <span className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-pink-300/40 bg-pink-500/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-pink-100">
-            ✨ Nuevo
-          </span>
-
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-2xl shadow-lg shadow-pink-500/30">
-            📸
-          </div>
-          <h3 className="text-2xl font-black leading-tight">Thumbnails IG</h3>
-          <p className="mt-2 text-sm leading-relaxed text-white/60">
-            Sube un screenshot de tu perfil de Instagram y {BRAND.appName} crea un set completo de portadas de Reels y thumbnails de posts con tu mismo estilo.
-          </p>
-
-          <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Badge icon="🧠" label="Detecta tu estilo" />
-            <Badge icon="🎬" label="Portadas Reels" />
-            <Badge icon="🖼️" label="Posts del feed" />
-            <Badge icon="📦" label="Set completo" />
-          </div>
-
-          <div className="mt-5">
-            <div className="rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 px-5 py-3.5 text-center text-sm font-black text-white shadow-lg shadow-purple-500/30 transition group-hover:brightness-110">
-              📸 Subir screenshot
             </div>
           </div>
         </button>
