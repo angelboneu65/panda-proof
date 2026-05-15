@@ -94,6 +94,7 @@ const CREDIT_COSTS = {
   generateFivePhotoAds:    20,
   improveMenu:             50,
   segmentMenuStories:      50,
+  igThumbnails:            50,
 };
 
 // IMPORTANTE: el webhook DEBE registrarse ANTES de express.json() para que el
@@ -1560,6 +1561,218 @@ Avoid distorted text. Avoid spelling errors. Avoid a generic AI look.`.slice(0, 
   } catch (err) {
     console.error("❌ menu/segment:", err.message);
     if (charge_tx) await refundTransaction(charge_tx, "menu/segment falló: " + err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// THUMBNAILS IG — desde un screenshot del perfil, crea portadas de Reels y
+// thumbnails de posts coherentes con el estilo de la cuenta.
+// ─────────────────────────────────────────────────────────────────────────────
+//   /api/ig/analyze     → Opus analiza el screenshot del perfil (gratis)
+//   /api/ig/thumbnails  → Opus arma N prompts → gpt-image-2 genera el set (50 cr)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// 1) Analiza un screenshot del perfil de Instagram (no cobra)
+app.post("/api/ig/analyze", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No se recibió imagen." });
+    if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." });
+
+    const imageBase64 = req.file.buffer.toString("base64");
+    const mediaType   = req.file.mimetype;
+
+    const message = await client.messages.create({
+      model:      MENU_ANALYZE_MODEL,
+      max_tokens: 2000,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+          {
+            type: "text",
+            text: `Eres un director de arte experto en branding e Instagram. Te paso un SCREENSHOT del perfil de Instagram de un negocio o creador (puede ser la grilla del feed, la bio, o un post).
+
+Analiza la cuenta y extrae su identidad visual. NO inventes lo que no se vea. Si algo no aparece, déjalo en "".
+
+Devuelve ÚNICAMENTE este JSON, sin markdown ni texto extra:
+{
+  "handle": "<@usuario si aparece, o ''>",
+  "accountName": "<nombre del negocio/creador o ''>",
+  "niche": "<nicho/industria, ej: Cafetería especializada, Coach de fitness, Tienda de ropa>",
+  "contentThemes": ["<tema de contenido visible 1>", "<tema 2>", "..."],
+  "visualStyle": "<descripción del estilo visual: ej 'minimalista, fondos claros, mucho espacio en blanco' o 'colorido, alto contraste, urbano'>",
+  "primaryColors": ["#hex1", "#hex2", "#hex3"],
+  "typographyVibe": "<vibra tipográfica observada, ej 'sans-serif moderna y limpia', 'serif elegante', 'bold condensada'>",
+  "toneOfVoice": "<tono de la marca: ej 'cercano y divertido', 'premium y aspiracional', 'profesional y confiable'>",
+  "audience": "<público objetivo probable>",
+  "summary": "<2-3 frases en español resumiendo la identidad de la cuenta y qué tipo de thumbnails le quedarían bien>"
+}
+
+Sé específico y aterrizado. Estima los colores hex con precisión observando el screenshot.`,
+          },
+        ],
+      }],
+    });
+
+    const raw   = message.content[0].text;
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ error: "No se pudo analizar el perfil." });
+
+    let parsed;
+    try { parsed = JSON.parse(match[0]); }
+    catch (e) { return res.status(500).json({ error: "Error parseando el análisis del perfil." }); }
+
+    res.json({ success: true, analysis: parsed });
+  } catch (err) {
+    console.error("❌ ig/analyze:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2) Genera un set de thumbnails (Reels 9:16 y/o posts 1:1) — 50 créditos
+app.post("/api/ig/thumbnails", upload.single("image"), async (req, res) => {
+  if (creditsEnabled && !req.user) return res.status(401).json({ error: "Inicia sesión para generar thumbnails." });
+  let charge_tx = null, chargeInfo = null;
+  if (creditsEnabled) {
+    const check = await consumeCredits(req.user.id, CREDIT_COSTS.igThumbnails, "image_generation", "Thumbnails IG — set de portadas", { endpoint: "ig/thumbnails" });
+    if (!check.allowed) return send402(res, check.info);
+    charge_tx = check.tx_id;
+    chargeInfo = check.info;
+  }
+  try {
+    if (!process.env.OPENAI_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "OPENAI_API_KEY"); return res.status(500).json({ error: "OPENAI_API_KEY no configurada." }); }
+    if (!process.env.ANTHROPIC_API_KEY) { if (charge_tx) await refundTransaction(charge_tx, "ANTHROPIC_API_KEY"); return res.status(500).json({ error: "ANTHROPIC_API_KEY no configurada." }); }
+
+    let analysis = {};
+    try { if (req.body.analysis) analysis = JSON.parse(req.body.analysis); } catch (e) { /* ignore */ }
+    const instructions = req.body.instructions || "";
+    const mode  = req.body.mode || "both";          // "reels" | "posts" | "both"
+    const count = req.body.count && req.body.count !== "auto" ? Number(req.body.count) : null;
+
+    const formatLine = mode === "reels"
+      ? "Genera SOLO portadas de Reels en formato vertical 9:16 (1080x1920)."
+      : mode === "posts"
+      ? "Genera SOLO thumbnails de posts en formato cuadrado 1:1 (1080x1080)."
+      : "Genera una MEZCLA: algunas portadas de Reels 9:16 verticales y algunos thumbnails de posts 1:1 cuadrados.";
+
+    // Paso 1: Opus arma el plan del set de thumbnails
+    const planMsg = await client.messages.create({
+      model:      MENU_ANALYZE_MODEL,
+      max_tokens: 3800,
+      messages: [{
+        role: "user",
+        content: `Eres director creativo experto en contenido para Instagram (Reels y feed).
+
+Analizamos un perfil de Instagram. Tu tarea: diseñar un SET de thumbnails (portadas) llamativos y coherentes con la identidad de esa cuenta, listos para publicar.
+
+REGLAS:
+- ${formatLine}
+- ${count ? `Genera EXACTAMENTE ${count} thumbnails en total.` : "Decide cuántos thumbnails generar (mínimo 4, máximo 9), según la riqueza de temas de la cuenta."}
+- Cada thumbnail debe enfocarse en UN tema/gancho distinto, alineado a los temas de contenido reales de la cuenta.
+- Mantén coherencia visual entre todos: misma familia tipográfica, paleta y estilo gráfico (que se vea como una serie de la misma marca).
+- Cada thumbnail puede llevar un texto gancho corto y potente (hook) — máximo 6 palabras, en español, con buena ortografía.
+- NO inventes datos falsos, precios ni promesas. Solo ganchos de contenido genéricos coherentes con el nicho.
+- Respeta el estilo visual y la paleta detectados. NO lo hagas genérico de IA.
+
+IDENTIDAD DE LA CUENTA (del análisis del screenshot):
+${JSON.stringify(analysis).slice(0, 4000)}
+
+INSTRUCCIONES DEL USUARIO (estilo / temas deseados):
+${instructions || "(sin instrucciones extra — usa la identidad detectada)"}
+
+Devuelve ÚNICAMENTE este JSON, sin markdown:
+{
+  "thumbnails": [
+    {
+      "title": "<título corto en español describiendo el thumbnail, ej: 'Reel: 3 errores comunes'>",
+      "kind": "<'reel' o 'post'>",
+      "hook": "<texto gancho corto que irá en el thumbnail, máx 6 palabras, en español>",
+      "imagePrompt": "<PROMPT EN INGLÉS para gpt-image-2, 80-150 palabras, autosuficiente: describe la composición (vertical 9:16 para reel o cuadrado 1:1 para post), la paleta exacta, la tipografía, dónde va el texto hook y qué dice EXACTAMENTE, el estilo gráfico coherente con la cuenta, mood. Texto legible en móvil, jerarquía clara. NO usar lorem ipsum. Avoid distorted text, avoid spelling errors, avoid a generic AI look.>"
+    }
+  ]
+}
+
+El imagePrompt SIEMPRE en inglés. Incluye en cada uno una línea final: "Coherent series — same typography family and color palette across all thumbnails."`,
+      }],
+    });
+
+    const rawPlan   = planMsg.content[0].text;
+    const planMatch = rawPlan.match(/\{[\s\S]*\}/);
+    if (!planMatch) { if (charge_tx) await refundTransaction(charge_tx, "Plan vacío"); return res.status(500).json({ error: "No se pudo planear el set de thumbnails." }); }
+
+    let plan;
+    try { plan = JSON.parse(planMatch[0]); }
+    catch (e) { if (charge_tx) await refundTransaction(charge_tx, "Plan JSON inválido"); return res.status(500).json({ error: "Error parseando el plan de thumbnails." }); }
+
+    const thumbs = Array.isArray(plan.thumbnails) ? plan.thumbnails.slice(0, 9) : [];
+    if (thumbs.length === 0) { if (charge_tx) await refundTransaction(charge_tx, "Sin thumbnails"); return res.status(500).json({ error: "El plan no produjo thumbnails." }); }
+
+    // ¿Tenemos screenshot de referencia para edits? (opcional)
+    const openai = getOpenAI();
+    let refPng = null;
+    if (req.file) {
+      try { refPng = await imageBufferToPng(req.file.buffer); } catch (e) { refPng = null; }
+    }
+
+    // Paso 2: genera todos los thumbnails en paralelo
+    const results = await Promise.allSettled(
+      thumbs.map(async (t) => {
+        try {
+          const isReel = (t.kind || "").toLowerCase() === "reel";
+          const size   = isReel ? "1024x1536" : "1024x1024";
+          const fullPrompt = `${t.imagePrompt}
+
+${isReel ? "Aspect ratio: 9:16 vertical Instagram Reel cover." : "Aspect ratio: 1:1 square Instagram post."}
+Use the brand colors and visual style from the reference. Avoid distorted text. Avoid spelling errors. Avoid a generic AI look.`.slice(0, 3900);
+
+          let response;
+          if (refPng) {
+            const imageFile = await toFile(refPng, "profile.png", { type: "image/png" });
+            response = await openai.images.edit({
+              model: "gpt-image-2", image: imageFile, prompt: fullPrompt, size, quality: "medium",
+            });
+          } else {
+            response = await openai.images.generate({
+              model: "gpt-image-2", prompt: fullPrompt, size, quality: "medium",
+            });
+          }
+          const b64 = response.data[0].b64_json;
+          return {
+            title: t.title || "Thumbnail",
+            kind:  isReel ? "reel" : "post",
+            hook:  t.hook || "",
+            image: `data:image/png;base64,${b64}`,
+          };
+        } catch (err) {
+          console.error(`❌ thumbnail "${t.title}":`, err.message);
+          return { title: t.title || "Thumbnail", kind: t.kind || "post", hook: t.hook || "", image: null, error: err.message };
+        }
+      })
+    );
+
+    const final = results.map((r) => r.status === "fulfilled" ? r.value : { image: null, error: r.reason?.message || "fail" });
+    const okCount = final.filter((t) => t.image).length;
+    if (okCount === 0 && charge_tx) {
+      await refundTransaction(charge_tx, "Ningún thumbnail generado");
+      return res.status(500).json({ error: "No se pudo generar ningún thumbnail.", thumbnails: final });
+    }
+
+    if (chargeInfo) res.setHeader("X-Credits-Charged", JSON.stringify({ charged: chargeInfo.charged, type: chargeInfo.charge_type, action: "ig_thumbnails" }));
+    res.json({
+      success: true,
+      thumbnails: final,
+      summary: [
+        "Se creó un set de thumbnails coherentes con tu cuenta",
+        "Se respetó tu paleta y estilo visual",
+        "Cada pieza tiene un gancho distinto",
+        "Listos para Reels y feed de Instagram",
+      ],
+      credits: chargeInfo ? { charged: chargeInfo.charged, type: chargeInfo.charge_type } : undefined,
+    });
+  } catch (err) {
+    console.error("❌ ig/thumbnails:", err.message);
+    if (charge_tx) await refundTransaction(charge_tx, "ig/thumbnails falló: " + err.message);
     res.status(500).json({ error: err.message });
   }
 });

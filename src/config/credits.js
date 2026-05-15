@@ -19,6 +19,7 @@ export const CREDIT_COSTS = {
   generateFivePhotoAds:    20,  // Foto a Campaña — generar 5 artes (paquete con descuento vs 5×5=25)
   improveMenu:             50,  // Mejorar Menú — análisis Opus + generación gpt-image-2
   segmentMenuStories:      50,  // Mejorar Menú — segmentar en historias 9:16 (varias piezas)
+  igThumbnails:            50,  // Thumbnails IG — set de portadas de Reels / posts desde screenshot
 };
 
 // ── Planes de suscripción ────────────────────────────────────────────────────

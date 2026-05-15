@@ -5,10 +5,12 @@ import {
   saveCampaign, updateCampaign, listCampaigns, getCampaign, deleteCampaign,
   saveResult, listResults, deleteResult,
   getMenuSession,
+  getIgSession,
 } from "./supabase";
 import AuthView from "./AuthView";
 import { CreateView, CampaignFlow } from "./CampaignFlow";
 import MenuImproverFlow from "./MenuImproverFlow";
+import IgThumbnailsFlow from "./IgThumbnailsFlow";
 import { BRAND } from "./brand";
 import ChatBubble from "./ChatBubble";
 import AdminPanel from "./AdminPanel";
@@ -1170,11 +1172,46 @@ function MenuSessionCard({ row, onLoad, onDelete }) {
   );
 }
 
-function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset, onOpenEditor, onLoadMenu }) {
+function IgSessionCard({ row, onLoad, onDelete }) {
+  const date = new Date(row.created_at).toLocaleDateString("es-PR", { day: "2-digit", month: "short", year: "numeric" });
+  const count = row.data?.thumbnails?.length || 0;
+  const mode = row.data?.mode || "both";
+  const label = mode === "reels" ? "Portadas de Reels" : mode === "posts" ? "Thumbnails de posts" : "Reels + Posts";
+  return (
+    <div className="group relative w-full overflow-hidden rounded-[20px] border border-pink-300/20 bg-gradient-to-br from-pink-500/10 via-purple-500/5 to-cyan-500/10 p-4 backdrop-blur-xl transition hover:border-pink-300/40">
+      <button
+        onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este set de thumbnails?")) onDelete(row.id); }}
+        className="absolute right-3 top-3 z-10 rounded-lg bg-black/70 px-2 py-1 text-[10px] font-black text-white/60 opacity-100 transition hover:bg-red-600/50 hover:text-red-200 sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Eliminar"
+      >✕</button>
+
+      <div onClick={() => onLoad?.(row.id)} className="cursor-pointer pr-8">
+        <div className="flex items-start gap-3">
+          {row.thumbnail ? (
+            <div className="flex-shrink-0 overflow-hidden rounded-2xl bg-black/30 ring-1 ring-white/10" style={{ width: 56, height: 56 }}>
+              <img src={row.thumbnail} alt="" className="block h-full w-full object-cover" />
+            </div>
+          ) : (
+            <div className="flex flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-500 via-purple-500 to-cyan-400 text-2xl shadow-lg" style={{ width: 56, height: 56 }}>📸</div>
+          )}
+          <div className="min-w-0 flex-1">
+            <span className="inline-block rounded-full border border-pink-300/30 bg-pink-300/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-pink-200">{label}</span>
+            <p className="mt-1.5 text-[15px] font-bold leading-snug text-white/90 break-words">{row.product_name || "Thumbnails IG"}</p>
+            <p className="mt-0.5 text-[13px] text-white/55 break-words">{count} {count === 1 ? "thumbnail" : "thumbnails"}</p>
+            <p className="mt-1 text-[11px] text-white/30">{date}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoadCampaign, onDeleteCampaign, onDeleteResult, onReset, onOpenEditor, onLoadMenu, onLoadIg }) {
   // Separamos menús mejorados de campañas Foto a Campaña (ambos viven en la misma tabla)
   const menuSessions = (campaigns || []).filter((r) => r.niche === "menu_improver");
-  const realCampaigns = (campaigns || []).filter((r) => r.niche !== "menu_improver");
-  const totalCount = history.length + realCampaigns.length + menuSessions.length + (savedResults?.length || 0);
+  const igSessions   = (campaigns || []).filter((r) => r.niche === "ig_thumbnails");
+  const realCampaigns = (campaigns || []).filter((r) => r.niche !== "menu_improver" && r.niche !== "ig_thumbnails");
+  const totalCount = history.length + realCampaigns.length + menuSessions.length + igSessions.length + (savedResults?.length || 0);
   const recentResults = (savedResults || []).slice(0, 3);
 
   if (totalCount === 0) {
@@ -1207,6 +1244,8 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
             {realCampaigns.length} {realCampaigns.length === 1 ? "campaña" : "campañas"}
             {" · "}
             {menuSessions.length} {menuSessions.length === 1 ? "menú" : "menús"}
+            {" · "}
+            {igSessions.length} {igSessions.length === 1 ? "set IG" : "sets IG"}
             {" · "}
             {savedResults?.length || 0} {(savedResults?.length || 0) === 1 ? "resultado" : "resultados"}
           </p>
@@ -1259,6 +1298,21 @@ function HistoryView({ history, campaigns, savedResults, onLoad, onDelete, onLoa
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {menuSessions.map((row) => (
               <MenuSessionCard key={row.id} row={row} onLoad={onLoadMenu} onDelete={onDeleteCampaign} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Thumbnails IG */}
+      {igSessions.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-[15px] font-black text-white/90">Thumbnails IG</h3>
+            <p className="text-[12px] text-white/40">Sets de portadas de Reels y posts generados</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {igSessions.map((row) => (
+              <IgSessionCard key={row.id} row={row} onLoad={onLoadIg} onDelete={onDeleteCampaign} />
             ))}
           </div>
         </section>
@@ -1457,6 +1511,14 @@ function MainApp({ session }) {
     setView("menu-improver");
   };
 
+  const [loadedIg, setLoadedIg] = useState(null);
+  const handleLoadIg = async (rowId) => {
+    const full = await getIgSession(rowId);
+    if (!full?.data) return;
+    setLoadedIg({ ...full.data, savedId: full.id });
+    setView("ig-thumbnails");
+  };
+
   const handleAnalyze = async (file, form) => {
     setImageFile(file);
     setFormData(form);
@@ -1529,9 +1591,10 @@ function MainApp({ session }) {
   const startAnalyzeFlow = () => setView("upload");
   const startCampaignFlow = () => { setLoadedCampaign(null); setView("campaign"); };
   const startMenuFlow = () => { setLoadedMenu(null); setView("menu-improver"); };
+  const startIgFlow = () => { setLoadedIg(null); setView("ig-thumbnails"); };
 
-  // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign, menu)?
-  const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign" || view === "menu-improver";
+  // ¿Estamos dentro del flujo "Crear" (chooser, analizar, campaign, menu, ig)?
+  const isCreateTab = view === "create" || view === "upload" || view === "analyzing" || view === "campaign" || view === "menu-improver" || view === "ig-thumbnails";
 
   // Avatar URL del perfil (con cache bust incluido en el URL)
   const avatarUrl = profile?.avatar_url || null;
@@ -1796,12 +1859,20 @@ function MainApp({ session }) {
               ⚠️ {error}
             </div>
           )}
-          {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} onPickMenu={startMenuFlow} />}
+          {view === "create"    && <CreateView onPickAnalyze={startAnalyzeFlow} onPickCampaign={startCampaignFlow} onPickMenu={startMenuFlow} onPickIg={startIgFlow} />}
           {view === "menu-improver" && (
             <MenuImproverFlow
               key={loadedMenu?.savedId || "new"}
               initialSession={loadedMenu}
               onExit={() => { setLoadedMenu(null); setView("create"); }}
+              onSavedSession={() => { refreshCampaigns?.(); refreshSavedResults?.(); }}
+            />
+          )}
+          {view === "ig-thumbnails" && (
+            <IgThumbnailsFlow
+              key={loadedIg?.savedId || "new"}
+              initialSession={loadedIg}
+              onExit={() => { setLoadedIg(null); setView("create"); }}
               onSavedSession={() => { refreshCampaigns?.(); refreshSavedResults?.(); }}
             />
           )}
@@ -1837,6 +1908,7 @@ function MainApp({ session }) {
               onDeleteCampaign={handleDeleteCampaign}
               onDeleteResult={handleDeleteResult}
               onLoadMenu={handleLoadMenu}
+              onLoadIg={handleLoadIg}
               onReset={handleReset}
             />
           )}
