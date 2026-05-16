@@ -409,6 +409,36 @@ function TransactionsSection() {
   );
 }
 
+// ── LegalSection ──────────────────────────────────────────────────────────────
+function LegalSection() {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl sm:rounded-[32px] sm:p-6">
+      <h3 className="mb-1 text-base font-black">Legal</h3>
+      <p className="mb-4 text-xs text-white/35">Documentos legales de Panda AdLab.</p>
+      <div className="space-y-2">
+        <a
+          href="https://www.pandaadlab.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-bold text-white/80 transition hover:bg-white/[0.07]"
+        >
+          <span>📄 Términos y Condiciones</span>
+          <span className="text-white/30">↗</span>
+        </a>
+        <a
+          href="https://www.pandaadlab.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-bold text-white/80 transition hover:bg-white/[0.07]"
+        >
+          <span>🔒 Política de Privacidad</span>
+          <span className="text-white/30">↗</span>
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // ── DangerZone ────────────────────────────────────────────────────────────────
 function DangerZone({ onLogout }) {
   return (
@@ -455,6 +485,7 @@ export default function AccountSettings({ session, profile: initialProfile, onPr
       <PasswordSection />
       <PlanSection     profile={profile} onOpenCredits={onOpenCredits} />
       <TransactionsSection />
+      <LegalSection />
       <DangerZone      onLogout={onLogout} />
     </div>
   );

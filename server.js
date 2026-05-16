@@ -135,6 +135,21 @@ app.post("/api/stripe-webhook", express.raw({ type: "application/json" }), async
             });
           }
         }
+
+        // Email de recibo — no bloquea el webhook (fire-and-forget).
+        {
+          const buyerEmail = s.customer_details?.email || s.customer_email || null;
+          if (buyerEmail) {
+            sendReceiptEmail({
+              email:       buyerEmail,
+              name:        s.customer_details?.name || "",
+              slug,
+              purchaseType,
+              amountTotal: s.amount_total,
+              currency:    s.currency,
+            }).catch((e) => console.error("[receipt-email]", e.message));
+          }
+        }
         break;
       }
       case "invoice.paid": {
@@ -1678,6 +1693,115 @@ app.post("/api/welcome-email", async (req, res) => {
   if (result.ok) return res.json({ success: true, skipped: result.skipped });
   res.status(502).json({ error: "No se pudo enviar el email de bienvenida." });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// EMAIL DE RECIBO — se envía cuando una persona compra créditos o un plan.
+// Lo dispara el webhook de Stripe (checkout.session.completed).
+// ═════════════════════════════════════════════════════════════════════════════
+const PURCHASE_INFO = {
+  basic:        { name: "Plan Basic — suscripción mensual", credits: 150 },
+  pro:          { name: "Plan Pro — suscripción mensual",   credits: 500 },
+  "pack-100":   { name: "Recarga de 100 créditos",  credits: 100 },
+  "pack-250":   { name: "Recarga de 250 créditos",  credits: 250 },
+  "pack-600":   { name: "Recarga de 600 créditos",  credits: 600 },
+  "pack-1500":  { name: "Recarga de 1500 créditos", credits: 1500 },
+  "pack-50-credits":  { name: "Recarga de 50 créditos",  credits: 50 },
+  "pack-150-credits": { name: "Recarga de 150 créditos", credits: 150 },
+};
+
+function formatMoney(amountCents, currency) {
+  const amt = (Number(amountCents) || 0) / 100;
+  return `$${amt.toFixed(2)} ${(currency || "usd").toUpperCase()}`;
+}
+
+function receiptEmailHtml({ firstName, itemName, credits, amountStr, dateStr }) {
+  const hi = firstName ? `Hola ${firstName},` : "¡Hola!";
+  const creditsRow = credits
+    ? `<tr><td style="padding:6px 0;font-size:14px;color:rgba(255,255,255,0.6);">Créditos acreditados</td>
+         <td style="padding:6px 0;font-size:14px;color:#fff;text-align:right;font-weight:700;">${credits}</td></tr>`
+    : "";
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#070812;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#070812;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#0f1020;border:1px solid rgba(255,255,255,0.08);border-radius:24px;overflow:hidden;">
+        <tr><td style="background:linear-gradient(135deg,#ec4899,#a855f7,#06b6d4);padding:32px;text-align:center;">
+          <div style="font-size:36px;line-height:1;">🧾</div>
+          <div style="margin-top:8px;font-size:20px;font-weight:800;color:#ffffff;">Recibo de compra</div>
+          <div style="margin-top:2px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.8);">Panda AdLab</div>
+        </td></tr>
+        <tr><td style="padding:30px 32px;">
+          <p style="margin:0 0 16px;font-size:15px;color:rgba(255,255,255,0.7);">${hi} gracias por tu compra. Aquí está tu recibo:</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:8px 16px;">
+            <tr><td style="padding:6px 0;font-size:14px;color:rgba(255,255,255,0.6);">Concepto</td>
+                <td style="padding:6px 0;font-size:14px;color:#fff;text-align:right;font-weight:700;">${itemName}</td></tr>
+            ${creditsRow}
+            <tr><td style="padding:6px 0;font-size:14px;color:rgba(255,255,255,0.6);">Fecha</td>
+                <td style="padding:6px 0;font-size:14px;color:#fff;text-align:right;">${dateStr}</td></tr>
+            <tr><td colspan="2" style="border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;"></td></tr>
+            <tr><td style="padding:6px 0;font-size:16px;color:#fff;font-weight:800;">Total pagado</td>
+                <td style="padding:6px 0;font-size:18px;color:#06b6d4;text-align:right;font-weight:800;">${amountStr}</td></tr>
+          </table>
+          <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.45);">
+            El pago fue procesado de forma segura por Stripe. Si tienes alguna duda sobre tu compra,
+            escríbenos a <a href="mailto:support@pandaadlab.com" style="color:#22d3ee;">support@pandaadlab.com</a>.
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;">
+            <tr><td align="center">
+              <a href="${APP_PUBLIC_URL}" style="display:inline-block;background:linear-gradient(135deg,#ec4899,#a855f7,#06b6d4);color:#fff;text-decoration:none;font-weight:800;font-size:14px;padding:13px 30px;border-radius:14px;">
+                Ir a Panda AdLab
+              </a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:18px 32px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;">
+          <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.35);">
+            Panda AdLab · by Color Panda Media Lab · <a href="${APP_PUBLIC_URL}" style="color:rgba(255,255,255,0.45);">pandaadlab.com</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+async function sendReceiptEmail({ email, name, slug, purchaseType, amountTotal, currency }) {
+  if (!email || typeof email !== "string") return { ok: false, reason: "no_email" };
+  if (!RESEND_API_KEY) {
+    console.warn("[receipt-email] RESEND_API_KEY no configurada — se omite el envío.");
+    return { ok: true, skipped: true };
+  }
+  const info = PURCHASE_INFO[slug] || {
+    name: purchaseType === "subscription" ? "Suscripción Panda AdLab" : "Compra de créditos",
+    credits: null,
+  };
+  const firstName = (name || "").trim().split(/\s+/)[0] || "";
+  const amountStr = formatMoney(amountTotal, currency);
+  const dateStr = new Date().toLocaleDateString("es-PR", { day: "2-digit", month: "long", year: "numeric" });
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: WELCOME_EMAIL_FROM,
+        to: [email],
+        subject: "🧾 Recibo de tu compra en Panda AdLab",
+        html: receiptEmailHtml({ firstName, itemName: info.name, credits: info.credits, amountStr, dateStr }),
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error("[receipt-email] Resend error:", r.status, t.slice(0, 250));
+      return { ok: false, reason: "resend_error" };
+    }
+    console.log("🧾 Recibo enviado a", email);
+    return { ok: true };
+  } catch (err) {
+    console.error("❌ sendReceiptEmail:", err.message);
+    return { ok: false, reason: err.message };
+  }
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // CHAT — asistente in-app con conocimiento completo de Panda AdLab
