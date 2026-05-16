@@ -1634,17 +1634,17 @@ function welcomeEmailHtml(firstName) {
 </body></html>`;
 }
 
-app.post("/api/welcome-email", async (req, res) => {
+// Función reutilizable: envía el email de bienvenida vía Resend.
+// Devuelve { ok: true } si se envió o se omitió correctamente,
+// { ok: false } si Resend falló (para que el caller pueda reintentar).
+async function sendWelcomeEmail(email, name) {
+  if (!email || typeof email !== "string") return { ok: false, reason: "no_email" };
+  if (!RESEND_API_KEY) {
+    console.warn("[welcome-email] RESEND_API_KEY no configurada — se omite el envío.");
+    return { ok: true, skipped: true };
+  }
+  const firstName = (name || "").trim().split(/\s+/)[0] || "";
   try {
-    const { email, name } = req.body || {};
-    if (!email || typeof email !== "string") {
-      return res.status(400).json({ error: "Falta el email." });
-    }
-    if (!RESEND_API_KEY) {
-      console.warn("[welcome-email] RESEND_API_KEY no configurada — se omite el envío.");
-      return res.json({ success: true, skipped: true });
-    }
-    const firstName = (name || "").trim().split(/\s+/)[0] || "";
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -1661,14 +1661,22 @@ app.post("/api/welcome-email", async (req, res) => {
     if (!r.ok) {
       const t = await r.text();
       console.error("[welcome-email] Resend error:", r.status, t.slice(0, 250));
-      return res.status(502).json({ error: "No se pudo enviar el email de bienvenida." });
+      return { ok: false, reason: "resend_error" };
     }
     console.log("📧 Email de bienvenida enviado a", email);
-    res.json({ success: true });
+    return { ok: true };
   } catch (err) {
-    console.error("❌ welcome-email:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("❌ sendWelcomeEmail:", err.message);
+    return { ok: false, reason: err.message };
   }
+}
+
+app.post("/api/welcome-email", async (req, res) => {
+  const { email, name } = req.body || {};
+  if (!email) return res.status(400).json({ error: "Falta el email." });
+  const result = await sendWelcomeEmail(email, name);
+  if (result.ok) return res.json({ success: true, skipped: result.skipped });
+  res.status(502).json({ error: "No se pudo enviar el email de bienvenida." });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2068,6 +2076,27 @@ app.post("/api/chat", async (req, res) => {
 app.get("/api/me", async (req, res) => {
   if (!creditsEnabled) return res.json({ creditsEnabled: false });
   if (!req.user) return res.status(401).json({ error: "No autenticado" });
+
+  // ── Email de bienvenida automático ──────────────────────────────────────
+  // Se envía UNA sola vez por usuario, la primera vez que carga la app tras
+  // registrarse. Vive aquí (y no en el frontend) para que funcione con
+  // CUALQUIER método de registro: correo/contraseña Y Google OAuth.
+  // El flag `welcome_email_sent` en profiles garantiza que sea idempotente.
+  if (req.profile && req.profile.welcome_email_sent === false) {
+    (async () => {
+      try {
+        const result = await sendWelcomeEmail(req.user.email, req.profile.full_name);
+        if (result.ok) {
+          await supabaseAdmin.from("profiles")
+            .update({ welcome_email_sent: true })
+            .eq("id", req.user.id);
+        }
+      } catch (e) {
+        console.error("[welcome-email auto]", e.message);
+      }
+    })();
+  }
+
   res.json({ creditsEnabled: true, profile: req.profile });
 });
 
