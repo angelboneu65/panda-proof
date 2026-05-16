@@ -49,6 +49,15 @@ export default function AuthView({ onSuccess }) {
         if (!name.trim())            throw new Error("Tu nombre es requerido");
         if (pwd.length < 6)          throw new Error("La contraseña debe tener mínimo 6 caracteres");
         const data = await signUp({ email, password: pwd, name: name.trim() });
+        // Email de bienvenida — fire-and-forget, no bloquea el registro.
+        try {
+          const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+          fetch(`${API_BASE}/api/welcome-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email.trim(), name: name.trim() }),
+          }).catch(() => {});
+        } catch (_) { /* no-op */ }
         if (data?.session) {
           onSuccess(data.session);
         } else {

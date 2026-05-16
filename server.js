@@ -1565,6 +1565,113 @@ Avoid distorted text. Avoid spelling errors. Avoid a generic AI look.`.slice(0, 
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// EMAIL DE BIENVENIDA — se dispara cuando una persona crea su cuenta.
+// Usa Resend (https://resend.com). Si RESEND_API_KEY no está configurada,
+// el endpoint no falla — simplemente omite el envío.
+// ─────────────────────────────────────────────────────────────────────────────
+// Setup:
+//   1. Crea una cuenta en resend.com y verifica el dominio pandaadlab.com.
+//   2. En Render → Environment, agrega:
+//        RESEND_API_KEY        = re_xxxxxxxx
+//        WELCOME_EMAIL_FROM    = Panda AdLab <hola@pandaadlab.com>
+//      (mientras no verifiques el dominio, Resend solo deja enviar desde
+//       onboarding@resend.dev y solo a tu propio correo.)
+// ═════════════════════════════════════════════════════════════════════════════
+const RESEND_API_KEY   = process.env.RESEND_API_KEY || null;
+const WELCOME_EMAIL_FROM = process.env.WELCOME_EMAIL_FROM || "Panda AdLab <onboarding@resend.dev>";
+const APP_PUBLIC_URL   = process.env.APP_PUBLIC_URL || "https://www.pandaadlab.com";
+
+function welcomeEmailHtml(firstName) {
+  const hi = firstName ? `Hola ${firstName},` : "¡Hola!";
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#070812;font-family:'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#070812;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#0f1020;border:1px solid rgba(255,255,255,0.08);border-radius:24px;overflow:hidden;">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#ec4899,#a855f7,#06b6d4);padding:36px 32px;text-align:center;">
+          <div style="font-size:40px;line-height:1;">🐼</div>
+          <div style="margin-top:10px;font-size:22px;font-weight:800;color:#ffffff;">Panda AdLab</div>
+          <div style="margin-top:4px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.8);">Director Creativo IA</div>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+          <h1 style="margin:0 0 12px;font-size:24px;font-weight:800;color:#ffffff;">${hi} 👋</h1>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.65);">
+            ¡Bienvenido a <strong style="color:#fff;">Panda AdLab</strong>! Ya tienes tu cuenta lista para crear anuncios que venden — sin diseñador, sin agencia.
+          </p>
+          <!-- Créditos -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 20px;">
+            <tr><td style="background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3);border-radius:16px;padding:18px;text-align:center;">
+              <div style="font-size:32px;font-weight:800;color:#06b6d4;">100 créditos</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.55);margin-top:2px;">de regalo, listos para usar</div>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:#fff;">Lo que puedes hacer hoy mismo:</p>
+          <p style="margin:0 0 6px;font-size:14px;line-height:1.6;color:rgba(255,255,255,0.7);">🔍 &nbsp;Analizar un anuncio y obtener tu Panda Score</p>
+          <p style="margin:0 0 6px;font-size:14px;line-height:1.6;color:rgba(255,255,255,0.7);">📷 &nbsp;Convertir una foto en una campaña completa</p>
+          <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:rgba(255,255,255,0.7);">🍽️ &nbsp;Rediseñar tu menú y crear historias 9:16</p>
+          <!-- CTA -->
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center">
+              <a href="${APP_PUBLIC_URL}" style="display:inline-block;background:linear-gradient(135deg,#ec4899,#a855f7,#06b6d4);color:#fff;text-decoration:none;font-weight:800;font-size:15px;padding:14px 32px;border-radius:16px;">
+                🚀 Entrar a Panda AdLab
+              </a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;">
+          <p style="margin:0;font-size:11px;color:rgba(255,255,255,0.35);">
+            Panda AdLab · by Color Panda Media Lab<br>
+            <a href="${APP_PUBLIC_URL}" style="color:rgba(255,255,255,0.45);">pandaadlab.com</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+app.post("/api/welcome-email", async (req, res) => {
+  try {
+    const { email, name } = req.body || {};
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ error: "Falta el email." });
+    }
+    if (!RESEND_API_KEY) {
+      console.warn("[welcome-email] RESEND_API_KEY no configurada — se omite el envío.");
+      return res.json({ success: true, skipped: true });
+    }
+    const firstName = (name || "").trim().split(/\s+/)[0] || "";
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: WELCOME_EMAIL_FROM,
+        to: [email],
+        subject: "🐼 ¡Bienvenido a Panda AdLab! Tienes 100 créditos de regalo",
+        html: welcomeEmailHtml(firstName),
+      }),
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      console.error("[welcome-email] Resend error:", r.status, t.slice(0, 250));
+      return res.status(502).json({ error: "No se pudo enviar el email de bienvenida." });
+    }
+    console.log("📧 Email de bienvenida enviado a", email);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ welcome-email:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // CHAT — asistente in-app con conocimiento completo de Panda AdLab
 // ═════════════════════════════════════════════════════════════════════════════
 
