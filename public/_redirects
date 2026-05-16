@@ -2,5 +2,11 @@
 /landing                /landing.html       200
 /inicio                 /landing.html       200
 
+# Páginas legales — pretty URL
+/privacy                /privacy.html       200
+/privacidad             /privacy.html       200
+/terms                  /terms.html         200
+/terminos               /terms.html         200
+
 # SPA fallback — todas las demás rutas sirven index.html para React routing
 /*                      /index.html         200
