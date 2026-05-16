@@ -12,6 +12,23 @@ export default function AuthView({ onSuccess }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError]   = useState(null);
   const [info, setInfo]     = useState(null);
+  const [showPromo, setShowPromo] = useState(false);
+
+  // ── Pop-up de bienvenida: "100 créditos gratis" ──────────────────────────────
+  // Aparece una vez por sesión del navegador para usuarios deslogueados.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (sessionStorage.getItem("panda_promo_seen") === "1") return;
+    } catch (_) { /* ignore */ }
+    const t = setTimeout(() => setShowPromo(true), 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  const closePromo = () => {
+    setShowPromo(false);
+    try { sessionStorage.setItem("panda_promo_seen", "1"); } catch (_) { /* ignore */ }
+  };
 
   // ── Detecta si el usuario llegó desde un enlace de recuperación ──────────────
   useEffect(() => {
@@ -292,6 +309,61 @@ export default function AuthView({ onSuccess }) {
           </p>
         </div>
       </div>
+
+      {/* ── Pop-up promocional: 100 créditos gratis ── */}
+      {showPromo && (mode === "signin" || mode === "signup") && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(7,8,18,0.82)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+          onClick={closePromo}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-[28px] border border-white/12 bg-[#0f1020] p-7 text-center"
+            style={{ boxShadow: "0 0 0 1px rgba(168,85,247,0.25), 0 24px 60px -12px rgba(168,85,247,0.55)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={closePromo}
+              aria-label="Cerrar"
+              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm text-white/50 transition hover:bg-white/10 hover:text-white"
+            >✕</button>
+
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-white p-2 shadow-xl">
+              <img src={BRAND.logo} alt={BRAND.appName} className="h-full w-full object-contain" />
+            </div>
+
+            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-cyan-200">
+              🎁 Oferta de bienvenida
+            </div>
+
+            <h3 className="mt-3 text-2xl font-black leading-tight">
+              Tienes{" "}
+              <span className="bg-gradient-to-r from-pink-400 via-purple-300 to-cyan-400 bg-clip-text text-transparent">
+                100 créditos gratis
+              </span>
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-white/55">
+              Solo por registrarte en {BRAND.appName}. Sin tarjeta, sin compromiso — empieza a crear hoy mismo.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => { closePromo(); switchMode("signup"); }}
+              className="mt-5 w-full rounded-2xl bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-purple-500/30 transition hover:brightness-110 active:scale-[0.98]"
+            >
+              🚀 Crear mi cuenta gratis
+            </button>
+            <button
+              type="button"
+              onClick={closePromo}
+              className="mt-2 w-full rounded-2xl px-5 py-2.5 text-xs font-bold text-white/40 transition hover:text-white/70"
+            >
+              Ahora no
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
